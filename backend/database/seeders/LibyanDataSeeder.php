@@ -349,10 +349,84 @@ class LibyanDataSeeder extends Seeder
             . collect($this->students)->whereNotNull('national_id')->count() . ' برقم وطني)');
     }
 
-    /** المرحلة 4 — حضور 8 أسابيع (سبت→خميس، فرادة مضمونة، center_id مملوء) + ~40 تصحيحاً. */
+    /**
+     * المرحلة 4 — حضور 8 أسابيع للخلف:
+     *  - الأسبوع يبدأ السبت (Carbon::SATURDAY) والجمعة عطلة — 6 أيام/أسبوع.
+     *  - الفرادة مضمونة بالبناء: حلقة (طالب × تاريخ) لا عشوائية فيها —
+     *    unique(student_id, date) لا يمكن أن يصطدم.
+     *  - center_id يُملأ دائماً من مركز الطالب (بلا NULL).
+     *  - النسب حتمية بمعادلة توزيع: ~80% حاضر / ~12% غائب / ~8% متأخر.
+     *  - إدخال بالدفعات (500) — لا استعلام لكل صف.
+     *  - ثم ~40 تصحيحاً (10/مركز): غائب→حاضر بيد مدير المركز المسؤول
+     *    (المرج بلا مدير ⇒ المصحِّح الأدمن — fallback) وcorrected_at بعد
+     *    created_at بساعات.
+     */
     private function seedAttendance(): void
     {
-        // تُملأ في المرحلة 4
+        // أيام الفترة: من سبتِ ما قبل 7 أسابيع حتى اليوم، بلا جُمَع
+        $start = today()->startOfWeek(\Carbon\Carbon::SATURDAY)->subWeeks(7);
+        $dates = [];
+        for ($d = $start->copy(); $d->lte(today()); $d->addDay()) {
+            if (! $d->isFriday()) {
+                $dates[] = $d->toDateString();
+            }
+        }
+
+        $rows = [];
+        foreach ($this->students as $s) {
+            foreach ($dates as $di => $date) {
+                // معادلة حتمية للتوزيع: 0..79 حاضر، 80..91 غائب، 92..99 متأخر
+                $h = ($s->id * 31 + $di * 7) % 100;
+                $status = $h < 80 ? 'present' : ($h < 92 ? 'absent' : 'late');
+
+                $rows[] = [
+                    'student_id'  => $s->id,
+                    'teacher_id'  => $s->teacher_id,
+                    'center_id'   => $s->center_id,               // مملوء دائماً
+                    'date'        => $date,
+                    'time'        => $status === 'absent' ? null
+                        : sprintf('0%d:%02d', $status === 'late' ? 8 : 7, ($s->id * 7 + $di * 13) % 60),
+                    'status'      => $status,
+                    'notes'       => $status === 'absent' ? 'غياب دون عذر مبلَّغ'
+                        : ($status === 'late' ? 'تأخر عن موعد الحلقة' : null),
+                    // ~ثلث السجلات من استيراد البصمة (يظهر «بصمة» في شاشة المراجعة)
+                    'imported_at' => ($di % 3 === 0) ? ($date . ' 09:30:00') : null,
+                    'created_at'  => $date . ' 08:00:00',
+                    'updated_at'  => $date . ' 08:00:00',
+                ];
+            }
+        }
+
+        foreach (array_chunk($rows, 500) as $chunk) {
+            DB::table('attendances')->insert($chunk);
+        }
+
+        // التصحيحات: 10 سجلات «غائب» لكل مركز تُقلب «حاضر» بتدقيق كامل —
+        // المصحِّح مدير المركز النشط، والمرج بلا مدير ⇒ الأدمن (fallback)
+        $corrected = 0;
+        foreach ($this->centers as $center) {
+            $correctorId = isset($this->managersByCenter[$center->id])
+                ? $this->managersByCenter[$center->id]->id
+                : $this->admin->id;
+
+            $ids = DB::table('attendances')
+                ->where('center_id', $center->id)
+                ->where('status', 'absent')
+                ->orderBy('id')
+                ->limit(10)
+                ->pluck('id');
+
+            DB::table('attendances')->whereIn('id', $ids)->update([
+                'status'       => 'present',
+                'notes'        => 'صُحّح: حاضر — خطأ من جهاز البصمة',
+                'corrected_by' => $correctorId,
+                'corrected_at' => DB::raw('DATE_ADD(created_at, INTERVAL 6 HOUR)'),
+            ]);
+            $corrected += count($ids);
+        }
+
+        $this->command->info('✓ المرحلة 4: ' . count($rows) . ' سجل حضور على ' . count($dates)
+            . ' يوماً (سبت→خميس) + ' . $corrected . ' تصحيحاً بتدقيق كامل');
     }
 
     /** المرحلة 5 — الحفظ العكسي 30→1 + 3-4 ختمات حسابية + اختبارات 6 أسابيع. */
