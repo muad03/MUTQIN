@@ -11,7 +11,8 @@
 | 3 | تقييد CORS | `config/cors.php`: استبدل `allowed_origins => ['*']` بنطاق الواجهة الفعلي فقط (مثل `https://mutqin.example.ly`) |
 | 4 | بوابة SMS للـ OTP | نقطة الدمج الوحيدة: `AuthController::sendOtp()` — اربطها بمزوّد (ليبيانا/مدار). بدونها لا يمكن لولي الأمر/المحفّظ استعادة كلمة المرور ذاتياً في الإنتاج |
 | 5 | التشغيل عبر Apache/nginx | لا تستخدم `php artisan serve` في الإنتاج (أحادي الخيط). وجّه DocumentRoot إلى `backend/public`، وقدّم `frontend-html/` كملفات ساكنة، وحدّث `frontend-html/js/config.js` (`API_BASE_URL`) |
-| 6 | نسخ احتياطي لقاعدة البيانات | جدولة `mysqldump` يومياً على الأقل لـ `mutqin_db` (بيانات قُصّر — لا تفريط). مثال: `mysqldump -u root mutqin_db > backup-$(date +%F).sql` |
+| 6 | إزالة عرض حسابات الدخول التجريبية من صفحة الدخول قبل النشر | مع `APP_ENV=production` يعيد `/api/public/demo-accounts` قائمة فارغة فيختفي القسم تلقائياً — وأزل أيضاً نص كلمة المرور من `login.html` وزر التعبئة في `js/pages/login.js` |
+| 7 | نسخ احتياطي لقاعدة البيانات | جدولة `mysqldump` يومياً على الأقل لـ `mutqin_db` (بيانات قُصّر — لا تفريط). مثال: `mysqldump -u root mutqin_db > backup-$(date +%F).sql` |
 | 7 | HTTPS | شهادة TLS إلزامية — التوكنات تُرسل في ترويسة Authorization |
 | 8 | حسابات تجريبية | غيّر كلمات مرور حسابات الـ seeder أو احذفها (`password` معلنة في صفحة الدخول أثناء التطوير؛ لوحة «بيانات تجريبية» تختفي تلقائياً خارج dev لكن الحسابات تبقى) |
 | 9 | الاختبارات خضراء | `php artisan test` قبل كل نشر (تغطي مصفوفة الأدوار والملكية وOTP والحدّ) |
