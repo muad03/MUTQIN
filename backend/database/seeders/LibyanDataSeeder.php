@@ -2,9 +2,14 @@
 
 namespace Database\Seeders;
 
+use App\Models\Center;
+use App\Models\User;
+use App\Support\PhoneNumber;
 use Database\Seeders\Data\LibyanNames;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 
 /**
  * البذر الليبي الشامل — يستبدل بيانات الديمو القديمة بالكامل ببيانات توليدية
@@ -42,6 +47,45 @@ class LibyanDataSeeder extends Seeder
     public const NATIONAL_ID_BASE = 150000000000; // تُسبق بـ 1 (ذكر) — synthetic
     public const PHONE_PREFIXES   = ['0912', '0925', '0944', '0945'];
 
+    // ما تُنشئه المراحل ويحتاجه اللاحق منها (داخل نفس التشغيلة)
+    private ?User $admin = null;
+    /** @var Center[] */
+    private array $centers = [];            // بالترتيب: بلال بن رباح، الفويهات، القوارشة، المرج
+    /** @var array<int, User[]> مفهرسة بمعرّف المركز */
+    private array $teachersByCenter = [];
+    /** @var User[] المدراء النشطون مفهرسون بمعرّف المركز */
+    private array $managersByCenter = [];
+    private int $phoneSeq = 0;              // عدّاد هواتف فريدة من النطاقات المحجوزة
+
+    /** هاتف ليبي فريد `09xxxxxxxx` من النطاقات المحجوزة — حتمي لا عشوائي. */
+    private function nextPhone(): string
+    {
+        $n = $this->phoneSeq++;
+        $prefix = self::PHONE_PREFIXES[$n % count(self::PHONE_PREFIXES)];
+
+        return PhoneNumber::normalize($prefix . str_pad((string) (300000 + intdiv($n, 4)), 6, '0', STR_PAD_LEFT));
+    }
+
+    /**
+     * إنشاء مستخدم ببريد نهائي {نقحرة}.{id}@domain — بخطوتين كنمط النظام
+     * (البريد النهائي يحتاج id لا يوجد إلا بعد الإدراج). display_code يحجزه
+     * خطاف User::creating تلقائياً (T/CA حسب الدور) — لا يُكتب يدوياً.
+     */
+    private function makeUser(string $arabicName, string $latin, string $role, string $password, array $attrs = [], string $domain = 'mutqin.ly'): User
+    {
+        $u = User::create(array_merge([
+            'name'     => $arabicName,
+            'email'    => 'tmp-' . Str::random(16) . '@mutqin.ly',
+            'phone'    => $this->nextPhone(),
+            'role'     => $role,
+            'password' => Hash::make($password),
+        ], $attrs));
+        $u->email = "{$latin}.{$u->id}@{$domain}";
+        $u->save();
+
+        return $u;
+    }
+
     public function run(): void
     {
         // حارس البيئة: البذر الليبي لبيئة التطوير المحلية حصراً
@@ -73,7 +117,93 @@ class LibyanDataSeeder extends Seeder
     /** المرحلة 2 — الأدمن + المراكز الأربعة + 14 محفّظاً + 4 مدراء مراكز. */
     private function seedCentersAndStaff(): void
     {
-        // تُملأ في المرحلة 2
+        // 1) مدير النظام — اسم ليبي جديد، والبريد اصطلاح ثابت admin@mutqin.ly (بلا كود عرض)
+        $this->admin = User::create([
+            'name'     => 'عبدالرزاق منصور الفيتوري',
+            'email'    => 'admin@mutqin.ly',
+            'phone'    => $this->nextPhone(),
+            'role'     => 'admin',
+            'password' => Hash::make(self::ADMIN_PASSWORD),
+        ]);
+
+        // 2) المراكز الأربعة — display_code (C{n}) يحجزه خطاف Center::creating ذرّياً
+        $centersData = [
+            ['مركز بلال بن رباح لتحفيظ القرآن', 'بنغازي', 'شارع الببسي', 5], // الرئيسي — الأكبر
+            ['مركز الإمام نافع لتحفيظ القرآن',  'بنغازي', 'الفويهات',    4],
+            ['مركز الفرقان لتحفيظ القرآن',      'بنغازي', 'القوارشة',    3],
+            ['مركز المرج لتحفيظ القرآن',        'المرج',  'وسط المدينة', 2], // بلا مدير — fallback الأدمن
+        ];
+        $teacherCounts = [];
+        foreach ($centersData as [$name, $city, $address, $tCount]) {
+            $c = Center::create([
+                'name'    => $name,
+                'city'    => $city,
+                'address' => $address,
+                'phone'   => $this->nextPhone(),
+            ]);
+            $this->centers[] = $c;
+            $teacherCounts[$c->id] = $tCount;
+        }
+
+        // 3) المحفّظون الـ14 — أسماء ثلاثية حتمية (لا عشوائية في الهوية)،
+        //    «محفظ أساسي» واحد بالضبط لكل مركز (الأول فيه) والبقية معاونون
+        $males    = array_keys(LibyanNames::MALE);
+        $families = array_keys(LibyanNames::FAMILIES);
+        $t = 0;
+        foreach ($this->centers as $ci => $center) {
+            $this->teachersByCenter[$center->id] = [];
+            for ($k = 0; $k < $teacherCounts[$center->id]; $k++, $t++) {
+                $first  = $males[$t % count($males)];
+                $middle = $males[($t + 7) % count($males)];
+                $family = $families[$t % count($families)];
+                $teacher = $this->makeUser(
+                    "{$first} {$middle} {$family}",
+                    LibyanNames::latin($first, $family),
+                    'teacher',
+                    self::TEACHER_PASSWORD,
+                    [
+                        'center_id' => $center->id,
+                        'type'      => $k === 0 ? 'محفظ أساسي' : 'محفظ معاون',
+                    ]
+                );
+                $this->teachersByCenter[$center->id][] = $teacher;
+            }
+        }
+
+        // 4) مدراء المراكز — نشط لكل مركز من الثلاثة الأولى (المرج بلا مدير عمداً)،
+        //    بريدهم {نقحرة}.centeradmin@mutqin.ly بلا لاحقة id (اصطلاح النظام)
+        $managersData = [
+            ['عبدالسلام خالد المسماري', 'abdulsalam.almismari', 0],
+            ['الصادق جمعة الترهوني',    'alsadiq.altarhuni',    1],
+            ['مفتاح إدريس العواكلي',    'muftah.alawakli',      2],
+        ];
+        foreach ($managersData as [$name, $latin, $centerIdx]) {
+            $m = User::create([
+                'name'      => $name,
+                'email'     => "{$latin}.centeradmin@mutqin.ly",
+                'phone'     => $this->nextPhone(),
+                'role'      => 'center_manager',
+                'center_id' => $this->centers[$centerIdx]->id,
+                'password'  => Hash::make(self::MANAGER_PASSWORD),
+            ]);
+            $this->managersByCenter[$m->center_id] = $m;
+        }
+
+        // مدير رابع معطَّل بجانب المدير النشط لمركز بلال بن رباح — يثبت أن
+        // التعطيل لا يترك المركز مكشوفاً (القاعدة «مدير واحد» تخص النشطين عملياً)
+        User::create([
+            'name'              => 'ميلود عمران الدرسي',
+            'email'             => 'miloud.aldarsi.centeradmin@mutqin.ly',
+            'phone'             => $this->nextPhone(),
+            'role'              => 'center_manager',
+            'center_id'         => $this->centers[0]->id,
+            'password'          => Hash::make(self::MANAGER_PASSWORD),
+            'is_active'         => false,
+            'status_changed_by' => $this->admin->id,
+            'status_changed_at' => now()->subWeeks(3),
+        ]);
+
+        $this->command->info('✓ المرحلة 2: أدمن + 4 مراكز + 14 محفّظاً (أساسي واحد/مركز) + 4 مدراء (أحدهم معطَّل، والمرج بلا مدير)');
     }
 
     /** المرحلة 3 — ~70 ولي أمر + 130 طالباً (إخوة مرتبطون، 10 بلا محفّظ 4/3/2/1). */
