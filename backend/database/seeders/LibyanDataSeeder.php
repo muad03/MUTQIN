@@ -64,6 +64,8 @@ class LibyanDataSeeder extends Seeder
     private array $parents = [];
     private int $phoneSeq = 0;              // عدّاد هواتف فريدة من النطاقات المحجوزة
     private int $natIdSeq = 0;              // عدّاد أرقام وطنية فريدة (synthetic)
+    /** @var int[] الختّامون — لا يوقَفون في مرحلة الحالات */
+    private array $khatmaStudentIds = [];
 
     /** رقم وطني ليبي synthetic فريد: بادئة الجنس (1 ذكر / 2 أنثى) + 11 رقماً. */
     private function nextNationalId(bool $female): string
@@ -453,6 +455,7 @@ class LibyanDataSeeder extends Seeder
             ->only([2, 38, 72, 105])
             ->pluck('id')
             ->all();
+        $this->khatmaStudentIds = $khatmaIds; // المرحلة 7 تستثنيهم من الإيقاف
 
         $memoRows = [];
         $qualities = ['excellent', 'good', 'good', 'average', 'excellent', 'good', 'average', 'weak']; // مزيج مرجّح
@@ -744,10 +747,66 @@ class LibyanDataSeeder extends Seeder
             . $threads->count() . ' محادثة + ' . count($nRows) . ' إشعاراً + ' . count($logRows) . ' سجل كلمة مرور');
     }
 
-    /** المرحلة 7 — ~8% معطَّلون بحقول التدقيق + كل حالات الحافّة الإلزامية. */
+    /**
+     * المرحلة 7 — نشط/غير نشط وحالات الحافّة:
+     *  - ~8% من الطلاب (10) والمحفّظين (1 معاون) وأولياء الأمور (5) يُعطَّلون
+     *    بحقول التدقيق (status_changed_by = مدير المركز المسؤول أو الأدمن).
+     *    المدراء عندهم معطَّل واحد أصلاً (المرحلة 2)، والمراكز تبقى نشطة
+     *    (8% من 4 ≈ 0 — وتعطيل مركز يقفل حساباته عن بروفة الدخول).
+     *  - كل موقوف عنده حضور وحفظ واختبارات سابقة بالفعل (بُذرت له في 4-5)
+     *    — برهان «صفر فقدان بيانات».
+     *  - أول أسرة (4 أبناء): ابن موقوف وإخوته نشطون — حالة ولي الأمر المطلوبة.
+     *  - الختّامون الأربعة مستثنون من الإيقاف (تبقى ختماتهم ظاهرة).
+     *  - بقية الحالات الإلزامية بُذرت في مراحلها: 10 بلا محفّظ بformer_teacher_name،
+     *    39 بلا رقم وطني، المرج بلا مدير.
+     */
     private function seedEdgeCases(): void
     {
-        // تُملأ في المرحلة 7
+        $changedAt = now()->subDays(9);
+        $auditFor = fn (?int $centerId) => isset($this->managersByCenter[$centerId])
+            ? $this->managersByCenter[$centerId]->id
+            : $this->admin->id;
+
+        // 1) الطلاب: ابن من الأسرة الرباعية الأولى + كل 13 طالباً حتى 10، بلا ختّامين
+        $firstFamilyChild = collect($this->students)->firstWhere('parent_id', $this->parents[0]->id);
+        $suspendIds = [$firstFamilyChild->id];
+        foreach ($this->students as $i => $s) {
+            if (count($suspendIds) >= 10) {
+                break;
+            }
+            if ($i % 13 === 5 && ! in_array($s->id, $this->khatmaStudentIds, true) && ! in_array($s->id, $suspendIds, true)) {
+                $suspendIds[] = $s->id;
+            }
+        }
+        foreach (collect($this->students)->whereIn('id', $suspendIds)->groupBy('center_id') as $centerId => $group) {
+            DB::table('students')->whereIn('id', $group->pluck('id'))->update([
+                'is_active' => false,
+                'status_changed_by' => $auditFor($centerId),
+                'status_changed_at' => $changedAt,
+            ]);
+        }
+
+        // 2) محفّظ معاون واحد يُعطَّل (ليس أساسياً — قاعدة الأساسي الواحد تبقى سليمة)
+        $inactiveTeacher = $this->teachersByCenter[$this->centers[0]->id][2]; // معاون بمركز بلال
+        DB::table('users')->where('id', $inactiveTeacher->id)->update([
+            'is_active' => false,
+            'status_changed_by' => $this->admin->id,
+            'status_changed_at' => $changedAt,
+        ]);
+
+        // 3) خمسة أولياء أمور يُعطَّلون — ليس بينهم ولي الأسرة الرباعية (يجب أن
+        //    يدخل ليرى ابنه الموقوف بجانب النشطين)
+        $inactiveParents = collect($this->parents)
+            ->filter(fn ($p, $i) => $i % 14 === 9 && $p->id !== $this->parents[0]->id)
+            ->take(5);
+        DB::table('users')->whereIn('id', $inactiveParents->pluck('id'))->update([
+            'is_active' => false,
+            'status_changed_by' => $this->admin->id,
+            'status_changed_at' => $changedAt,
+        ]);
+
+        $this->command->info('✓ المرحلة 7: أُوقف ' . count($suspendIds) . ' طلاب (منهم ابن الأسرة الرباعية) + محفّظ معاون + '
+            . $inactiveParents->count() . ' أولياء — كلٌّ بسجلّات سابقة كاملة وحقول تدقيق');
     }
 
     // ============================================================
