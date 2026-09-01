@@ -541,10 +541,207 @@ class LibyanDataSeeder extends Seeder
             . count($testRows) . ' اختباراً سبتياً بـ' . count($qRows) . ' ثمناً من فهرس الأثمان');
     }
 
-    /** المرحلة 6 — 12 طلب نقل + ~15 محادثة + إشعارات + password_change_logs. */
+    /**
+     * المرحلة 6 — الطلبات والرسائل والإشعارات وسجلات كلمة المرور:
+     *  - 12 طلباً بأحادية الاعتماد القائمة (status + admin_note فقط):
+     *    4 نقل معتمَدة (الطالب فعلاً عند الوجهة وfrom_* تاريخه السابق) +
+     *    3 معلّقة (منها داخلي لمركز له مدير + داخلي للمرج ⇒ إشعاره للأدمن fallback) +
+     *    3 مرفوضة بأسباب عربية مكتوبة + 2 إضافة بلقطة بيانات كاملة.
+     *  - ~15 محادثة ولي↔محفّظ حول حالة الابن، مقروء وغير مقروء بالاتجاهين.
+     *  - إشعارات لكل دور (مطابقة لصيغة InAppNotification المخزّنة) مزيجاً.
+     *  - password_change_logs بالطرق الثلاث otp/self/admin مع مزامنة عدّادات users.
+     */
     private function seedRequestsAndComms(): void
     {
-        // تُملأ في المرحلة 6
+        $now = now();
+        [$c1, $c2, $c3, $marj] = $this->centers;
+        $t = fn (Center $c, int $i) => $this->teachersByCenter[$c->id][$i % count($this->teachersByCenter[$c->id])];
+        $stuOf = fn (Center $c, int $i) => $this->studentsByCenter[$c->id][$i % count($this->studentsByCenter[$c->id])];
+
+        // ===== 12 طلباً =====
+        $requests = [];
+        // 4 نقل معتمَدة: الطالب حالياً عند محفّظ الوجهة، وfrom_* مصدره السابق
+        foreach ([[$c1, $c2, 5], [$c2, $c3, 8], [$c3, $c1, 11], [$marj, $c1, 14]] as $ri => [$fromC, $toC, $si]) {
+            $student = $stuOf($toC, $si);
+            $requests[] = [
+                'type' => 'transfer', 'status' => 'approved',
+                'requested_by' => $student->teacher_id ?? $t($toC, 0)->id,
+                'target_center_id' => $toC->id, 'target_teacher_id' => $student->teacher_id ?? $t($toC, 0)->id,
+                'student_id' => $student->id, 'national_id' => $student->national_id,
+                'nationality_type' => $student->nationality_type, 'student_name' => $student->name,
+                'from_center_id' => $fromC->id, 'from_teacher_id' => $t($fromC, 1)->id,
+                'admin_note' => null,
+                'created_at' => $now->copy()->subWeeks(5 - $ri), 'updated_at' => $now->copy()->subWeeks(5 - $ri)->addDay(),
+            ];
+        }
+        // 3 معلّقة: داخلي بمركز له مدير + داخلي بالمرج (fallback أدمن) + عابر للمراكز
+        $pendingSpecs = [
+            [$c1, $c1, 20],   // داخلي — يذهب لمدير مركز بلال
+            [$marj, $marj, 3], // داخلي بالمرج — لا مدير ⇒ الأدمن
+            [$c2, $c3, 17],   // عابر — الأدمن
+        ];
+        foreach ($pendingSpecs as $pi => [$fromC, $toC, $si]) {
+            $student = $stuOf($fromC, $si);
+            $requester = $t($toC, 2 + $pi); // محفّظ الوجهة
+            if ($requester->id === $student->teacher_id) { // لا يطلب المرء طالبه
+                $requester = $t($toC, 3 + $pi);
+            }
+            $requests[] = [
+                'type' => 'transfer', 'status' => 'pending',
+                'requested_by' => $requester->id,
+                'target_center_id' => $toC->id, 'target_teacher_id' => $requester->id,
+                'student_id' => $student->id, 'national_id' => $student->national_id,
+                'nationality_type' => $student->nationality_type, 'student_name' => $student->name,
+                'from_center_id' => $student->center_id, 'from_teacher_id' => $student->teacher_id,
+                'admin_note' => null,
+                'created_at' => $now->copy()->subDays(3 + $pi), 'updated_at' => $now->copy()->subDays(3 + $pi),
+            ];
+        }
+        // 3 مرفوضة بأسباب عربية
+        $rejections = [
+            'المحفّظ المستهدف مكتمل العدد هذا الفصل — يُعاد الطلب بعد شهر',
+            'ولي الأمر لم يوافق على النقل بعد التواصل معه هاتفياً',
+            'بيانات الطالب ناقصة: لا رقم وطني ولا شهادة ميلاد مرفقة',
+        ];
+        foreach ($rejections as $ji => $note) {
+            $fromC = $this->centers[$ji % 3];
+            $toC   = $this->centers[($ji + 1) % 3];
+            $student = $stuOf($fromC, 25 + $ji);
+            $requester = $t($toC, $ji);
+            $requests[] = [
+                'type' => 'transfer', 'status' => 'rejected',
+                'requested_by' => $requester->id,
+                'target_center_id' => $toC->id, 'target_teacher_id' => $requester->id,
+                'student_id' => $student->id, 'national_id' => $student->national_id,
+                'nationality_type' => $student->nationality_type, 'student_name' => $student->name,
+                'from_center_id' => $student->center_id, 'from_teacher_id' => $student->teacher_id,
+                'admin_note' => $note,
+                'created_at' => $now->copy()->subWeeks(2)->subDays($ji), 'updated_at' => $now->copy()->subWeeks(2)->subDays($ji)->addHours(20),
+            ];
+        }
+        // 2 إضافة بلقطة كاملة (معتمَد + معلّق)
+        foreach ([['approved', $c2, 'قيس رمضان الكيلاني', 'qais'], ['pending', $c3, 'حمزة عياد السنوسي', 'hamza']] as $ai => [$st, $c, $name, $latin]) {
+            $requester = $t($c, 1 + $ai);
+            $requests[] = [
+                'type' => 'add', 'status' => $st,
+                'requested_by' => $requester->id,
+                'target_center_id' => $c->id, 'target_teacher_id' => $requester->id,
+                'student_id' => null,
+                'national_id' => '1' . str_pad((string) (59900000001 + $ai), 11, '0', STR_PAD_LEFT),
+                'nationality_type' => 'libyan', 'student_name' => $name,
+                'age' => 9 + $ai, 'phone' => $this->nextPhone(),
+                'guardian_name' => 'رمضان الكيلاني', 'guardian_phone' => $this->nextPhone(),
+                'guardian_email' => $latin . '.guardian@parent.mutqin.ly',
+                'guardian_nationality_type' => 'libyan',
+                'guardian_id_number' => '1' . str_pad((string) (59900000101 + $ai), 11, '0', STR_PAD_LEFT),
+                'from_center_id' => null, 'from_teacher_id' => null,
+                'admin_note' => null,
+                'created_at' => $now->copy()->subDays(6 + $ai), 'updated_at' => $now->copy()->subDays(5 + $ai),
+            ];
+        }
+        // توحيد أعمدة الدفعة (إدخال الدُفعات يتطلب نفس المفاتيح في كل صف)
+        $reqDefaults = [
+            'student_id' => null, 'national_id' => null, 'nationality_type' => 'libyan',
+            'nationality_name' => null, 'student_name' => null, 'age' => null, 'phone' => null,
+            'guardian_name' => null, 'guardian_phone' => null, 'guardian_email' => null,
+            'guardian_nationality_type' => 'libyan', 'guardian_nationality_name' => null,
+            'guardian_id_number' => null, 'from_center_id' => null, 'from_teacher_id' => null,
+            'admin_note' => null,
+        ];
+        DB::table('student_requests')->insert(array_map(fn ($r) => array_merge($reqDefaults, $r), $requests));
+
+        // ===== ~15 محادثة ولي↔محفّظ (حول حالة الابن حصراً) =====
+        $threads = collect($this->students)
+            ->filter(fn ($s) => $s->teacher_id && $s->parent_id)
+            ->values()
+            ->filter(fn ($s, $i) => $i % 8 === 0)  // ~15 طالباً موزّعين
+            ->take(15)->values();
+
+        $dialog = [
+            ['parent',  'السلام عليكم شيخنا، كيف مستوى %s في الحفظ هذا الأسبوع؟'],
+            ['teacher', 'وعليكم السلام ورحمة الله. %s مجتهد والحمد لله، أتم مقرر الأسبوع وضبط أحكام المد.'],
+            ['parent',  'الله يبارك فيكم. هل يحتاج مراجعة إضافية في البيت؟'],
+            ['teacher', 'يُستحسن تثبيت آخر سورتين قبل حلقة السبت، عشر دقائق يومياً تكفي.'],
+            ['parent',  'أبشر شيخنا، جزاكم الله خيراً على المتابعة.'],
+        ];
+        $msgRows = [];
+        foreach ($threads as $ti => $s) {
+            $msgCount = 2 + ($ti % 4); // 2..5 رسائل
+            for ($m = 0; $m < $msgCount; $m++) {
+                [$role, $tpl] = $dialog[$m];
+                $sent = $now->copy()->subDays(10 - $ti % 7)->addHours($m * 3);
+                // الأحدث في نصف الخيوط غير مقروء (بالاتجاهين) لتظهر شارات غير المقروء
+                $unreadLast = ($m === $msgCount - 1) && ($ti % 2 === 0);
+                $msgRows[] = [
+                    'student_id' => $s->id,
+                    'sender_id' => $role === 'parent' ? $s->parent_id : $s->teacher_id,
+                    'sender_role' => $role,
+                    'body' => sprintf($tpl, mb_substr($s->name, 0, mb_strpos($s->name, ' ') ?: null)),
+                    'read_at' => $unreadLast ? null : $sent->copy()->addHours(2),
+                    'created_at' => $sent, 'updated_at' => $sent,
+                ];
+            }
+        }
+        DB::table('messages')->insert($msgRows);
+
+        // ===== إشعارات لكل دور (صيغة InAppNotification المخزّنة حرفياً) =====
+        $notif = function (User $to, string $type, string $title, string $body, ?int $ref, string $link, bool $read, int $daysAgo) {
+            return [
+                'id' => (string) Str::uuid(),
+                'type' => \App\Notifications\InAppNotification::class,
+                'notifiable_type' => User::class,
+                'notifiable_id' => $to->id,
+                'data' => json_encode(['type' => $type, 'title' => $title, 'body' => $body, 'ref_id' => $ref, 'link' => $link], JSON_UNESCAPED_UNICODE),
+                'read_at' => $read ? now()->subDays($daysAgo)->addHours(5) : null,
+                'created_at' => now()->subDays($daysAgo), 'updated_at' => now()->subDays($daysAgo),
+            ];
+        };
+        $nRows = [];
+        // الأدمن: طلبات معلّقة (منها المرج fallback) — مزيج مقروء/غير مقروء
+        $nRows[] = $notif($this->admin, 'request_created', 'طلب جديد بانتظار الموافقة', 'طلب نقل داخلي بمركز المرج (بلا مدير) آل إليك.', null, 'admin/requests.html', false, 2);
+        $nRows[] = $notif($this->admin, 'request_created', 'طلب جديد بانتظار الموافقة', 'محفّظ أرسل طلب نقل عابر للمراكز.', null, 'admin/requests.html', true, 4);
+        // المدراء النشطون: الداخلي لمركزهم
+        foreach ($this->managersByCenter as $cid => $mgr) {
+            $nRows[] = $notif($mgr, 'request_created', 'طلب نقل داخلي بمركزك', 'محفّظ من مركزك طلب نقل طالب إليه — بانتظار اعتمادك.', null, 'manager/requests.html', $cid !== $c1->id, 3);
+        }
+        // محفّظون: موافقة ورفض ورسالة
+        $nRows[] = $notif($t($c1, 0), 'request_approved', 'تمت الموافقة على طلبك', 'اعتُمد نقل الطالب إلى حلقتك.', null, 'teacher/requests.html', false, 1);
+        $nRows[] = $notif($t($c2, 0), 'request_rejected', 'تم رفض طلبك', 'رُفض الطلب: ' . $rejections[0], null, 'teacher/requests.html', true, 5);
+        // أولياء وأمهات: حفظ واختبار ورسائل — مزيج
+        foreach ($threads->take(6) as $pi => $s) {
+            $p = User::find($s->parent_id);
+            $nRows[] = $notif($p, 'memorization_added', 'تسجيل حفظ جديد', 'سجّل المحفّظ حفظاً جديداً لابنك «' . $s->name . '».', $s->id, 'parent/child.html?id=' . $s->id, $pi % 2 === 0, 1 + $pi);
+            if ($pi < 3) {
+                $nRows[] = $notif($p, 'test_added', 'اختبار أسبوعي جديد', 'سُجّل اختبار أسبوعي لابنك «' . $s->name . '» — النتيجة: ناجح.', $s->id, 'parent/child.html?id=' . $s->id, false, $pi + 1);
+            }
+            $teacher = User::find($s->teacher_id);
+            $nRows[] = $notif($teacher, 'message_received', 'رسالة جديدة بخصوص «' . $s->name . '»', 'ولي الأمر أرسل رسالة جديدة.', $s->id, 'teacher/messages.html?student=' . $s->id, $pi % 3 === 0, $pi + 1);
+        }
+        DB::table('notifications')->insert($nRows);
+
+        // ===== سجلات تغيير كلمة المرور (otp / self / admin) مع مزامنة عدّادات users =====
+        $pwdTargets = [
+            [$t($c1, 1), 'self', 12],  [$t($c2, 1), 'admin', 20],
+            [$t($c3, 0), 'otp', 8],    [$this->parents[3], 'otp', 15],
+            [$this->parents[9], 'otp', 6], [$this->parents[15], 'self', 25],
+            [$this->managersByCenter[$c2->id], 'admin', 30],
+        ];
+        $logRows = [];
+        foreach ($pwdTargets as [$u, $method, $daysAgo]) {
+            $at = now()->subDays($daysAgo);
+            $logRows[] = [
+                'user_id' => $u->id, 'changed_at' => $at, 'method' => $method,
+                'created_at' => $at, 'updated_at' => $at,
+            ];
+            DB::table('users')->where('id', $u->id)->update([
+                'password_changed_count' => DB::raw('password_changed_count + 1'),
+                'password_last_changed_at' => $at,
+            ]);
+        }
+        DB::table('password_change_logs')->insert($logRows);
+
+        $this->command->info('✓ المرحلة 6: ' . count($requests) . ' طلباً + ' . count($msgRows) . ' رسالة في '
+            . $threads->count() . ' محادثة + ' . count($nRows) . ' إشعاراً + ' . count($logRows) . ' سجل كلمة مرور');
     }
 
     /** المرحلة 7 — ~8% معطَّلون بحقول التدقيق + كل حالات الحافّة الإلزامية. */
