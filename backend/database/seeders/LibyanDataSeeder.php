@@ -3,6 +3,7 @@
 namespace Database\Seeders;
 
 use App\Models\Center;
+use App\Models\Student;
 use App\Models\User;
 use App\Support\PhoneNumber;
 use Database\Seeders\Data\LibyanNames;
@@ -55,7 +56,20 @@ class LibyanDataSeeder extends Seeder
     private array $teachersByCenter = [];
     /** @var User[] المدراء النشطون مفهرسون بمعرّف المركز */
     private array $managersByCenter = [];
+    /** @var Student[] كل الطلاب المبذورين */
+    private array $students = [];
+    /** @var array<int, Student[]> مفهرسة بمعرّف المركز */
+    private array $studentsByCenter = [];
+    /** @var User[] أولياء الأمور */
+    private array $parents = [];
     private int $phoneSeq = 0;              // عدّاد هواتف فريدة من النطاقات المحجوزة
+    private int $natIdSeq = 0;              // عدّاد أرقام وطنية فريدة (synthetic)
+
+    /** رقم وطني ليبي synthetic فريد: بادئة الجنس (1 ذكر / 2 أنثى) + 11 رقماً. */
+    private function nextNationalId(bool $female): string
+    {
+        return ($female ? '2' : '1') . str_pad((string) (50000000001 + $this->natIdSeq++), 11, '0', STR_PAD_LEFT);
+    }
 
     /** هاتف ليبي فريد `09xxxxxxxx` من النطاقات المحجوزة — حتمي لا عشوائي. */
     private function nextPhone(): string
@@ -206,10 +220,133 @@ class LibyanDataSeeder extends Seeder
         $this->command->info('✓ المرحلة 2: أدمن + 4 مراكز + 14 محفّظاً (أساسي واحد/مركز) + 4 مدراء (أحدهم معطَّل، والمرج بلا مدير)');
     }
 
-    /** المرحلة 3 — ~70 ولي أمر + 130 طالباً (إخوة مرتبطون، 10 بلا محفّظ 4/3/2/1). */
+    /**
+     * المرحلة 3 — 70 ولي أمر + 130 طالباً:
+     *  - أسر حتمية (لا عشوائية في الهوية): 30 أسرة بابن واحد + 25 باثنين +
+     *    10 بثلاثة + 5 بأربعة = 130 ابناً، الإخوة بنفس العائلة والمركز
+     *    وولي أمر واحد (منطق ParentResolver: هوية → هاتف → بريد — كلها فريدة).
+     *  - التوزيع على المراكز بحصص 45/35/30/20 حسب الحجم.
+     *  - ~70% برقم وطني (1 ذكر / 2 أنثى) و~30% بدونه، و5 طلاب أجانب بأسماء
+     *    جنسياتهم، و10 بلا محفّظ (4/3/2/1) بحقل former_teacher_name مملوءاً.
+     *  - كل الحقول الاختيارية تُملأ في أغلب الصفوف (هاتف، عمر، ميلاد، ولي…).
+     */
     private function seedFamilies(): void
     {
-        // تُملأ في المرحلة 3
+        $males    = array_keys(LibyanNames::MALE);
+        $females  = array_keys(LibyanNames::FEMALE);
+        $families = array_keys(LibyanNames::FAMILIES);
+
+        // حصص المراكز (بترتيب إنشائها) وعدّاد ما تبقّى منها
+        $quota = [];
+        foreach ([45, 35, 30, 20] as $idx => $q) {
+            $quota[$this->centers[$idx]->id] = $q;
+        }
+        // «بلا محفّظ» لكل مركز: 4/3/2/1 — يُقتطعون من آخر طلاب كل مركز
+        $noTeacherQuota = [];
+        foreach ([4, 3, 2, 1] as $idx => $q) {
+            $noTeacherQuota[$this->centers[$idx]->id] = $q;
+        }
+        // محفّظون سابقون (أسماء عرضية لحقل former_teacher_name)
+        $formerTeachers = ['الشيخ عبدالله سالم الزوي', 'الشيخ رمضان علي الشلوي', 'الشيخ سليمان أحمد الجازوي'];
+
+        // بنية الأسر: 5×4 + 10×3 + 25×2 + 30×1 = 130 ابناً لـ70 أسرة —
+        // الأكبر أولاً (first-fit decreasing): الأسر الكبيرة تحجز أولاً
+        // وأسر الابن الواحد تسدّ بقايا الحصص، فلا يتبقى فراغ لا يتّسع
+        $familySizes = array_merge(array_fill(0, 5, 4), array_fill(0, 10, 3), array_fill(0, 25, 2), array_fill(0, 30, 1));
+
+        $centerIds     = array_keys($quota);
+        $centerTotals  = $quota;             // الحصة الكاملة الثابتة لكل مركز
+        $teacherCursor = [];                 // توزيع دوري على محفّظي كل مركز
+        $assignedCount = [];                 // ترتيب الطالب داخل مركزه (0-based)
+        $studentSeq    = 0;
+        $foreignNats   = ['تشاد', 'مصر', 'تونس', 'سوريا', 'النيجر'];
+
+        foreach ($familySizes as $f => $size) {
+            // مركز الأسرة: أول مركز تتّسع حصته المتبقية لكل الأبناء (الإخوة معاً)
+            $centerId = null;
+            foreach ($centerIds as $cid) {
+                if ($quota[$cid] >= $size) {
+                    $centerId = $cid;
+                    break;
+                }
+            }
+            if ($centerId === null) {
+                throw new \RuntimeException("خلل في موزّع الأسر: لا مركز يتّسع لأسرة من {$size} أبناء — راجع الحصص");
+            }
+            $quota[$centerId] -= $size;
+
+            $family      = $families[$f % count($families)];
+            $fatherFirst = $males[($f * 3) % count($males)];
+            // ~13% من الأولياء أمهات (أسماء نسائية) — البقية آباء
+            $motherled   = ($f % 8) === 7;
+            $guardFirst  = $motherled ? $females[$f % count($females)] : $fatherFirst;
+            $guardName   = "{$guardFirst} {$family}";
+            $foreignFam  = ($f % 14) === 6; // ~5 أسر أجنبية
+
+            // ولي الأمر: هوية (id_number) لـ~80% + هاتف فريد + بريد فريد — أعمدة
+            // منطق ParentResolver الثلاثة، وبلا display_code (بتصميم مقصود)
+            $parent = $this->makeUser(
+                $guardName,
+                LibyanNames::latin($guardFirst, $family),
+                'parent',
+                self::PARENT_PASSWORD,
+                [
+                    'nationality_type' => $foreignFam ? 'foreigner' : 'libyan',
+                    'nationality_name' => $foreignFam ? $foreignNats[$f % count($foreignNats)] : null,
+                    'id_number'        => (! $foreignFam && ($f % 5) !== 4)
+                        ? $this->nextNationalId($motherled)
+                        : null,
+                ],
+                'parent.mutqin.ly'
+            );
+            $this->parents[] = $parent;
+
+            for ($k = 0; $k < $size; $k++, $studentSeq++) {
+                $i = $studentSeq;
+                $female = ($i % 5) < 2; // ~40% طالبات
+                $first  = $female ? $females[($i * 7) % count($females)] : $males[($i * 11) % count($males)];
+                $name   = "{$first} {$fatherFirst} {$family}";
+
+                // 10 بلا محفّظ (4/3/2/1): الأواخر N من حصة كل مركز — موضع الطالب
+                // داخل مركزه يحسم الأمر حتمياً، بمحفّظ سابق مذكور للعرض
+                $pos = $assignedCount[$centerId] = ($assignedCount[$centerId] ?? -1) + 1;
+                $noTeacher = $pos >= $centerTotals[$centerId] - $noTeacherQuota[$centerId];
+                $teacher = null;
+                if (! $noTeacher) {
+                    $list = $this->teachersByCenter[$centerId];
+                    $cur  = $teacherCursor[$centerId] ?? 0;
+                    $teacher = $list[$cur % count($list)];
+                    $teacherCursor[$centerId] = $cur + 1;
+                }
+
+                $age = ($i % 10) === 9 ? 18 + ($i % 28) : 6 + ($i % 12); // ~10% بالغون حتى 45
+
+                $student = Student::create([
+                    'name'             => $name,
+                    'birth_date'       => now()->subYears($age)->startOfYear()->addDays(($i * 17) % 360),
+                    'phone'            => $age >= 13 ? $this->nextPhone() : null, // هاتف للمراهقين فما فوق
+                    'national_id'      => ($foreignFam || ($i % 20) >= 15) ? null : $this->nextNationalId($female), // ~70% إجمالاً (الأجانب بلا رقم ليبي دائماً)
+                    'nationality_type' => $foreignFam ? 'foreigner' : 'libyan',
+                    'nationality_name' => $foreignFam ? $foreignNats[$f % count($foreignNats)] : null,
+                    'age'              => $age,
+                    'guardian_name'    => $guardName,
+                    'guardian_phone'   => $parent->phone,
+                    'center_id'        => $centerId,
+                    'teacher_id'       => $teacher?->id,
+                    'former_teacher_name' => $noTeacher ? $formerTeachers[$i % count($formerTeachers)] : null,
+                    'parent_id'        => $parent->id,
+                    'enrollment_date'  => now()->subMonths(3 + ($i % 18))->subDays($i % 28),
+                    'is_active'        => true,
+                ]);
+                $this->students[] = $student;
+                $this->studentsByCenter[$centerId][] = $student;
+            }
+        }
+
+        $noTeacherTotal = collect($this->students)->whereNull('teacher_id')->count();
+        $this->command->info('✓ المرحلة 3: ' . count($this->parents) . ' ولي أمر + ' . count($this->students)
+            . ' طالباً (' . $noTeacherTotal . ' بلا محفّظ، '
+            . collect($this->students)->whereNotNull('national_id')->count() . ' برقم وطني)');
     }
 
     /** المرحلة 4 — حضور 8 أسابيع (سبت→خميس، فرادة مضمونة، center_id مملوء) + ~40 تصحيحاً. */
