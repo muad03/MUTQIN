@@ -429,10 +429,116 @@ class LibyanDataSeeder extends Seeder
             . ' يوماً (سبت→خميس) + ' . $corrected . ' تصحيحاً بتدقيق كامل');
     }
 
-    /** المرحلة 5 — الحفظ العكسي 30→1 + 3-4 ختمات حسابية + اختبارات 6 أسابيع. */
+    /**
+     * المرحلة 5 — الحفظ + الختمات + الاختبارات الأسبوعية:
+     *  - الحفظ عكسي (الناس ← الفاتحة): قائمة السور من SurahReference معكوسةً
+     *    بترتيب المصحف — لا أرقام أجزاء يدوية، juz المخزّن من المرجع نفسه.
+     *  - مستويات متفاوتة حتمية (8..77 سورة)، و4 طلاب أكملوا 114 سورة —
+     *    الختمة «حسابية»: يرصدها SurahReference::progress() بلا جدول خاص.
+     *  - اختبارات 6 أسابيع × كل طالب، يوم السبت (بداية الأسبوع المعتمدة)،
+     *    وأسئلة أثمان حقيقية من فهرس athman المبذور، والنتيجة الكلية متسقة
+     *    مع الأسئلة (راسب = ثمن راسب واحد على الأقل بنص خطأ عربي).
+     *  - إدخال بالدفعات (500) — لا خطافات على هذه الجداول.
+     */
     private function seedMemorization(): void
     {
-        // تُملأ في المرحلة 5
+        // ترتيب الحفظ العكسي: الناس أولاً نزولاً نحو الفاتحة (عكس ترتيب المصحف)
+        $reversed = array_reverse(array_keys(\App\Support\SurahReference::SURAHS)); // 114
+        $surahJuz = \App\Support\SurahReference::SURAHS;
+
+        // 4 ختمات: طلاب نشطون بمحفّظين من مراكز مختلفة (مواضع حتمية)
+        $khatmaIds = collect($this->students)
+            ->filter(fn ($s) => $s->teacher_id !== null)
+            ->values()
+            ->only([2, 38, 72, 105])
+            ->pluck('id')
+            ->all();
+
+        $memoRows = [];
+        $qualities = ['excellent', 'good', 'good', 'average', 'excellent', 'good', 'average', 'weak']; // مزيج مرجّح
+        foreach ($this->students as $s) {
+            // مستوى الطالب: كم سورة حفظ من البداية العكسية — الختّامون 114
+            $count = in_array($s->id, $khatmaIds, true) ? 114 : (8 + (($s->id * 13) % 70));
+
+            for ($k = 0; $k < $count; $k++) {
+                $surah = $reversed[$k];
+                $juz   = $surahJuz[$surah];
+                // صفحة تقريبية معقولة: الجزء ≈ 20 صفحة (بيانات عرضية لا يعتمد عليها النظام)
+                $pageFrom = ($juz - 1) * 20 + 2 + ($k % 17);
+
+                $memoRows[] = [
+                    'student_id' => $s->id,
+                    'teacher_id' => $s->teacher_id,
+                    'date'       => today()->subDays(($count - $k) * 2)->toDateString(), // الأقدم أولاً
+                    'surah_name' => $surah,
+                    'juz'        => $juz,                     // من المرجع — لا يدوي
+                    'hizb'       => min(60, $juz * 2),
+                    'page_from'  => $pageFrom,
+                    'page_to'    => $pageFrom + ($k % 3),
+                    'eighth'     => ($k % 4 === 0) ? 'الثمن ' . (1 + ($k % 8)) : null,
+                    'quality'    => $qualities[($s->id + $k) % count($qualities)],
+                    'notes'      => ($k % 5 === 0)
+                        ? 'تسميع متقن، ضبط جيد لأحكام المدود'
+                        : (($k % 7 === 3) ? 'يحتاج تثبيت أواخر السورة' : null),
+                    'created_at' => now()->subDays(($count - $k) * 2),
+                    'updated_at' => now()->subDays(($count - $k) * 2),
+                ];
+            }
+        }
+        foreach (array_chunk($memoRows, 500) as $chunk) {
+            DB::table('memorizations')->insert($chunk);
+        }
+
+        // ===== الاختبارات الأسبوعية: 6 أسابيع × كل طالب، سبتيّة، بأثمان حقيقية =====
+        $thumns = DB::table('athman')->orderBy('global_order')->pluck('start_text')->all();
+
+        $testRows = [];
+        foreach ($this->students as $s) {
+            for ($w = 5; $w >= 0; $w--) {
+                $examDate = today()->startOfWeek(\Carbon\Carbon::SATURDAY)->subWeeks($w);
+                $fail = (($s->id * 5 + $w) % 8) === 0; // ~12% راسب
+                $testRows[] = [
+                    'student_id' => $s->id,
+                    'teacher_id' => $s->teacher_id,
+                    'exam_date'  => $examDate->toDateString(),
+                    'result'     => $fail ? 'راسب' : 'ناجح',
+                    'notes'      => $fail
+                        ? 'لم يثبّت المقرر جيداً — يُعاد الاختبار الأسبوع القادم'
+                        : 'اجتاز التسميع بتقدير حسن',
+                    'created_at' => $examDate->copy()->addHours(11),
+                    'updated_at' => $examDate->copy()->addHours(11),
+                ];
+            }
+        }
+        foreach (array_chunk($testRows, 500) as $chunk) {
+            DB::table('weekly_tests')->insert($chunk);
+        }
+
+        // أسئلة الأثمان (2-4 لكل اختبار) متسقة مع النتيجة الكلية:
+        // «راسب» = أول ثمن راسب بنص خطأ عربي، و«ناجح» = كل الأثمان ناجحة
+        $tests = DB::table('weekly_tests')->orderBy('id')->get(['id', 'student_id', 'result']);
+        $qRows = [];
+        foreach ($tests as $ti => $t) {
+            $qCount = 2 + ($ti % 3);
+            for ($q = 0; $q < $qCount; $q++) {
+                $failed = $t->result === 'راسب' && $q === 0;
+                $qRows[] = [
+                    'weekly_test_id' => $t->id,
+                    'student_id'     => $t->student_id,
+                    'eighth_start'   => $thumns[($ti * 3 + $q * 7) % count($thumns)],
+                    'result'         => $failed ? 'راسب' : 'ناجح',
+                    'mistake'        => $failed ? 'خلط بين الآيات المتشابهة وتردد في بداية الثمن' : null,
+                    'created_at'     => now(),
+                    'updated_at'     => now(),
+                ];
+            }
+        }
+        foreach (array_chunk($qRows, 500) as $chunk) {
+            DB::table('weekly_test_questions')->insert($chunk);
+        }
+
+        $this->command->info('✓ المرحلة 5: ' . count($memoRows) . ' سجل حفظ (4 ختمات كاملة 114 سورة) + '
+            . count($testRows) . ' اختباراً سبتياً بـ' . count($qRows) . ' ثمناً من فهرس الأثمان');
     }
 
     /** المرحلة 6 — 12 طلب نقل + ~15 محادثة + إشعارات + password_change_logs. */
