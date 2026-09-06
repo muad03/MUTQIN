@@ -28,66 +28,12 @@
         { name: 'phone', label: 'رقم الهاتف', value: c.phone },
     ];
 
-    // ===== نافذة تفاصيل المركز (استعلامان في الخادم — بلا N+1) =====
-    async function showCenterDetails(id) {
-        let d;
-        try { d = (await API.get('/centers/' + id)).data || {}; }
-        catch (e) { UI.toast(e.message, 'danger'); return; }
-
-        const info = (lbl, val) => `<div style="padding:11px 13px;background:var(--ivory-soft);border-radius:10px;">
-            <div style="font-size:11.5px;color:#7A8F82;margin-bottom:2px;">${lbl}</div>
-            <div style="font-size:14px;font-weight:700;color:#04361F;">${UI.escapeHtml(val ?? '—')}</div></div>`;
-
-        const teacherRows = (d.teachers || []).length
-            ? d.teachers.map(t => `<tr>
-                  <td>${t.display_code ? `<span class="mq-code">${UI.escapeHtml(t.display_code)}</span>` : '—'}</td>
-                  <td style="font-weight:600;">${UI.escapeHtml(t.name)}</td>
-                  <td>${t.type === 'محفظ أساسي'
-                      ? UI.badge('محفظ أساسي', 'success')
-                      : UI.badge('محفظ معاون', 'secondary')}</td>
-                  <td style="text-align:center;">${t.is_active ? UI.badge('نشط', 'success') : UI.badge('غير نشط', 'danger')}</td>
-                </tr>`).join('')
-            : `<tr><td colspan="4" style="text-align:center;color:#9DB3A6;padding:16px;">لا يوجد محفّظون في هذا المركز</td></tr>`;
-
-        const ov = document.createElement('div');
-        ov.style.cssText = 'position:fixed;inset:0;background:rgba(4,54,31,.45);z-index:1500;display:flex;align-items:center;justify-content:center;padding:24px;';
-        ov.innerHTML = `
-            <div class="mq-card" style="width:100%;max-width:640px;max-height:90vh;overflow:auto;margin:0;">
-              <div class="mq-card-header" style="position:sticky;top:0;">
-                <h3 class="mq-card-title">تفاصيل المركز</h3>
-                <button class="mq-act" data-close style="background:rgba(4,54,31,.06);color:#3D6B52;font-size:20px;">×</button></div>
-              <div class="mq-card-body">
-                <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px;flex-wrap:wrap;">
-                  <h2 style="font-family:'Amiri',serif;font-size:24px;margin:0;color:#04361F;">${UI.escapeHtml(d.name || '—')}</h2>
-                  ${d.display_code ? `<span class="mq-code" style="font-size:14px;">${UI.escapeHtml(d.display_code)}</span>` : ''}
-                  ${d.is_active ? UI.badge('نشط', 'success') : UI.badge('غير نشط', 'danger')}
-                </div>
-
-                <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-bottom:22px;">
-                  ${info('🏙️ المدينة', d.city)}
-                  ${info('📍 العنوان', d.address)}
-                  ${info('📞 الهاتف', d.phone)}
-                  ${info('👥 عدد الطلاب', (d.students_count ?? 0) + ' طالب')}
-                  ${info('🧑‍🏫 عدد المحفّظين', (d.teachers_count ?? 0) + ' محفّظ')}
-                </div>
-
-                <h4 style="font-family:'Amiri',serif;color:#04532F;margin:0 0 10px;">🧑‍🏫 محفّظو المركز</h4>
-                <div style="border:1px solid var(--hair);border-radius:12px;overflow:hidden;">
-                  <table class="mq-table">
-                    <thead><tr><th style="width:80px;">الكود</th><th>الاسم</th><th>النوع</th><th style="text-align:center;width:100px;">الحالة</th></tr></thead>
-                    <tbody>${teacherRows}</tbody></table>
-                </div>
-              </div>
-            </div>`;
-        document.body.appendChild(ov);
-        const close = () => ov.remove();
-        ov.querySelector('[data-close]').onclick = close;
-        ov.addEventListener('mousedown', e => { if (e.target === ov) close(); });
-    }
+    // تفاصيل المركز صارت صفحة مستقلة (center.html?id=) — الصف كله قابل للنقر
+    const openCenterPage = (id) => { location.href = 'center.html?id=' + encodeURIComponent(id); };
 
     function rowsHtml(centers) {
         return centers.map(c => `
-            <tr>
+            <tr data-row="${c.id}" style="cursor:pointer;" title="عرض تفاصيل المركز">
               <td>${c.display_code ? `<span class="mq-code">${UI.escapeHtml(c.display_code)}</span>` : '—'}</td>
               <td style="font-weight:600;">${UI.escapeHtml(c.name)}</td>
               <td>${c.city ? UI.badge(UI.escapeHtml(c.city), 'primary') : '—'}</td>
@@ -128,7 +74,12 @@
 
             function bindRowActions(list) {
                 const body = document.getElementById('ctr-body');
-                body.querySelectorAll('[data-details]').forEach(b => b.onclick = () => showCenterDetails(b.dataset.details));
+                // الصف كله يفتح صفحة التفاصيل — عدا النقر على أزرار الإجراءات
+                body.querySelectorAll('tr[data-row]').forEach(tr => tr.onclick = (e) => {
+                    if (e.target.closest('button')) return;
+                    openCenterPage(tr.dataset.row);
+                });
+                body.querySelectorAll('[data-details]').forEach(b => b.onclick = () => openCenterPage(b.dataset.details));
                 body.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => {
                     const c = list.find(x => x.id == b.dataset.edit);
                     UI.formModal({ title: 'تعديل المركز', submitText: 'حفظ التعديلات', fields: fields(c),
