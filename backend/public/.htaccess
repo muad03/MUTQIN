@@ -1,3 +1,15 @@
+# منح صريح لهذا المجلد وحده — يفكّ حجب backend/.htaccess الأبوي (الصيغتان
+# لتوافق Apache 2.4 و2.2). لا تعدّل قواعد لارافيل أدناه — هذا المقطع مُلحق فقط.
+<IfModule mod_authz_core.c>
+    Require all granted
+</IfModule>
+<IfModule !mod_authz_core.c>
+    <IfModule mod_access_compat.c>
+        Order allow,deny
+        Allow from all
+    </IfModule>
+</IfModule>
+
 <IfModule mod_rewrite.c>
     <IfModule mod_negotiation.c>
         Options -MultiViews -Indexes
