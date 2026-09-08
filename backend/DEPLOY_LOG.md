@@ -1,15 +1,22 @@
-# سجل النشر — مُتقِن على InfinityFree (mutqin.xo.je)
+# سجل النشر — مُتقِن على Libyan Spider (mutqin.ly)
 
-> الخادم بلا SSH / CLI / artisan / composer / git — **كل تغيير يُرفع يدوياً**
-> عبر File Manager أو FTP. لا شيء يصل الخادم من تلقاء نفسه.
+> **المستضيف**: Libyan Spider — لوحة cPanel · المستخدم `mutqinly` · ‏PHP 8.3
+> **جذر الويب**: `/home/mutqinly/public_html/` (الواجهة فيه مباشرة + `public_html/backend/` شجرة لارافيل)
+> **القاعدة**: `mutqinly_mutqin` (phpMyAdmin من cPanel)
+> **‏SSH**: يظهر في اللوحة لكنه **معطَّل من المستضيف** (Connection refused على 22) —
+> عملياً بلا SSH / CLI / artisan / composer / git.
+> **النشر يدوي حصراً** عبر cPanel File Manager (‏Upload + Extract للحزم،
+> وEdit للصق الملفات المفردة). لا شيء يصل الخادم من تلقاء نفسه.
+>
+> (تاريخ: الاستضافة الأولى كانت InfinityFree على mutqin.xo.je — انتُقل عنها في 2026-09-08.)
 >
 > **ملفات خادمية لا تُدهس ولا تُحذف في أي رفعة** (أُنشئت يدوياً وليست في المستودع):
-> - `htdocs/backend/.env`
-> - `htdocs/backend/bootstrap/cache/`
-> - `htdocs/backend/storage/framework/cache/data/`
-> - `htdocs/backend/storage/framework/sessions/`
-> - `htdocs/backend/storage/framework/views/`
-> - `htdocs/backend/storage/logs/`
+> - `public_html/backend/.env`
+> - `public_html/backend/bootstrap/cache/`
+> - `public_html/backend/storage/framework/cache/data/`
+> - `public_html/backend/storage/framework/sessions/`
+> - `public_html/backend/storage/framework/views/`
+> - `public_html/backend/storage/logs/`
 >
 > كل commit جديد = مدخل هنا. الهجرات تُرفق بـSQL خام (لا artisan migrate على
 > الخادم). مفاتيح .env الجديدة تُسرد صراحة وتُضاف للخادم يدوياً.
@@ -29,6 +36,14 @@
 **طريقة الرفع:** re-zip (الحزمة الكاملة الأولى) + sql (استيراد القاعدة في phpMyAdmin)
 **حالة الرفع:** done
 
+## faa6ad4 — 2026-09-08
+**ما تغيّر:** تحديث سجل النشر بحقائق الانتقال إلى Libyan Spider (cPanel، mutqin.ly، public_html، القاعدة mutqinly_mutqin، SSH معطَّل من المستضيف) واستبدال كل ذكر لـInfinityFree/htdocs
+**الملفات:**
+  - backend/DEPLOY_LOG.md  (modified)
+**يحتاج رفع؟** no (ملف تتبّع في المستودع)
+**طريقة الرفع:** none
+**حالة الرفع:** pending
+
 ## 0959ee9 — 2026-09-08
 **ما تغيّر:** تجربة موبايل بنمط التطبيقات: شريط تنقل سفلي ثابت لكل دور (+«المزيد» يفتح الدرج) · النماذج صحائف سفلية بعرض كامل · حقول 16px (بلا زوم iOS) وأهداف لمس 44px+ · PWA (manifest + theme-color + إضافة للشاشة الرئيسية كتطبيق مستقل)
 **الملفات:**
@@ -37,7 +52,7 @@
   - js/config.js  (modified)
   - manifest.webmanifest  (added)
 **يحتاج رفع؟** yes
-**طريقة الرفع:** edit-in-place للثلاثة المعدَّلة (htdocs/css/theme.css و htdocs/js/layout.js و htdocs/js/config.js) + رفع htdocs/manifest.webmanifest الجديد
+**طريقة الرفع:** edit-in-place للثلاثة المعدَّلة (public_html/css/theme.css و public_html/js/layout.js و public_html/js/config.js) + رفع public_html/manifest.webmanifest الجديد
 **حالة الرفع:** pending
 
 ## de7e38b — 2026-09-08
@@ -46,7 +61,7 @@
   - js/pages/login.js  (modified)
   - login.html  (modified)
 **يحتاج رفع؟** yes
-**طريقة الرفع:** edit-in-place (ملفان صغيران — لصق عبر File Manager Edit: htdocs/js/pages/login.js و htdocs/login.html)
+**طريقة الرفع:** edit-in-place (ملفان صغيران — لصق عبر File Manager Edit: public_html/js/pages/login.js و public_html/login.html)
 **حالة الرفع:** pending
 
 ## إنشاء هذا السجل — 2026-09-07
