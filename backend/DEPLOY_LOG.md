@@ -36,7 +36,7 @@
 **طريقة الرفع:** re-zip (الحزمة الكاملة الأولى) + sql (استيراد القاعدة في phpMyAdmin)
 **حالة الرفع:** done
 
-## faa6ad4 — 2026-09-08
+## fa75475 — 2026-09-08
 **ما تغيّر:** تحديث سجل النشر بحقائق الانتقال إلى Libyan Spider (cPanel، mutqin.ly، public_html، القاعدة mutqinly_mutqin، SSH معطَّل من المستضيف) واستبدال كل ذكر لـInfinityFree/htdocs
 **الملفات:**
   - backend/DEPLOY_LOG.md  (modified)
