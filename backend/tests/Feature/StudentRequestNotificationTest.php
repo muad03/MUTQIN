@@ -7,70 +7,58 @@ use Tests\Concerns\CreatesCoreData;
 use Tests\TestCase;
 
 /**
- * دورة طلب الطالب مع الإشعارات: إنشاء → إشعار الأدمن؛ موافقة/رفض → إشعار صاحب الطلب.
+ * مسارات المحفّظ للطلبات أُلغيت من الأساس (لا «طلباتي» ولا إنشاء)، ومدير النظام ليس طرفاً.
+ * صفوف الإضافة القديمة المعلّقة يصفّيها مدير مركزها: اعتماد → إنشاء الطالب + إشعار صاحب الطلب؛ رفض → إشعار بالسبب.
  */
 class StudentRequestNotificationTest extends TestCase
 {
     use RefreshDatabase, CreatesCoreData;
 
-    public function test_create_request_notifies_all_admins(): void
+    public function test_teacher_request_routes_are_gone(): void
     {
-        $admin1  = $this->makeAdmin();
-        $admin2  = $this->makeAdmin();
         $teacher = $this->makeTeacher();
+        $token = $this->loginToken($teacher);
 
-        $this->authed($this->loginToken($teacher))->postJson('/api/student-requests', [
-            'type'             => 'add',
-            'name'             => 'طالب طلب الاختبار',
-            'national_id'      => '155500000001',
-            'nationality_type' => 'libyan',
-        ])->assertStatus(201);
-
-        $this->assertDatabaseHas('student_requests', ['student_name' => 'طالب طلب الاختبار', 'status' => 'pending']);
-
-        foreach ([$admin1, $admin2] as $admin) {
-            $this->assertSame(1, $admin->notifications()->count(), "الأدمن {$admin->id} لم يُشعَر");
-            $this->assertSame('request_created', $admin->notifications()->first()->data['type']);
-        }
-        // المحفّظ نفسه لا يُشعَر بالإنشاء
-        $this->assertSame(0, $teacher->notifications()->count());
+        $this->authed($token)->getJson('/api/student-requests')->assertStatus(404);
+        $this->authed($token)->postJson('/api/student-requests', [
+            'type' => 'add', 'name' => 'طالب', 'national_id' => '155500000001',
+        ])->assertStatus(404);
+        $this->authed($token)->postJson('/api/student-requests', ['type' => 'transfer', 'student_id' => 1])->assertStatus(404);
+        $this->assertSame(0, \App\Models\StudentRequest::count());
     }
 
-    public function test_approve_creates_student_and_notifies_requester(): void
+    public function test_approve_legacy_add_creates_student_and_notifies_requester(): void
     {
         $admin   = $this->makeAdmin();
-        $teacher = $this->makeTeacher();
+        $center  = $this->makeCenter();
+        $manager = $this->makeManager($center);
+        $teacher = $this->makeTeacher($center);
+        $req = $this->makeLegacyAddRequest($teacher, ['student_name' => 'طالب للموافقة']);
 
-        $this->authed($this->loginToken($teacher))->postJson('/api/student-requests', [
-            'type' => 'add', 'name' => 'طالب للموافقة', 'national_id' => '155500000002',
-        ])->assertStatus(201);
-        $reqId = \App\Models\StudentRequest::where('student_name', 'طالب للموافقة')->value('id');
-
-        $this->authed($this->loginToken($admin))
-            ->postJson("/api/admin/student-requests/{$reqId}/approve")
+        $this->authed($this->loginToken($manager))
+            ->postJson("/api/manager/student-requests/{$req->id}/approve")
             ->assertOk();
 
-        // الطالب أُنشئ لدى المحفّظ الطالب
+        // الطالب أُنشئ لدى المحفّظ صاحب الطلب
         $this->assertDatabaseHas('students', [
             'name' => 'طالب للموافقة', 'teacher_id' => $teacher->id, 'center_id' => $teacher->center_id,
         ]);
-        // وصاحب الطلب أُشعر بالموافقة
-        $types = $teacher->notifications()->get()->pluck('data.type');
-        $this->assertTrue($types->contains('request_approved'));
+        // وصاحب الطلب أُشعر بالموافقة برابط «طلابي» (لا صفحة طلبات له)
+        $notif = $teacher->notifications()->get()->firstWhere('data.type', 'request_approved');
+        $this->assertNotNull($notif);
+        $this->assertSame('teacher/students.html', $notif->data['link']);
+        $this->assertSame(0, $admin->notifications()->count());
     }
 
-    public function test_reject_notifies_requester_with_reason(): void
+    public function test_reject_legacy_add_notifies_requester_with_reason(): void
     {
-        $admin   = $this->makeAdmin();
-        $teacher = $this->makeTeacher();
+        $center  = $this->makeCenter();
+        $manager = $this->makeManager($center);
+        $teacher = $this->makeTeacher($center);
+        $req = $this->makeLegacyAddRequest($teacher, ['student_name' => 'طالب للرفض']);
 
-        $this->authed($this->loginToken($teacher))->postJson('/api/student-requests', [
-            'type' => 'add', 'name' => 'طالب للرفض', 'national_id' => '155500000003',
-        ])->assertStatus(201);
-        $reqId = \App\Models\StudentRequest::where('student_name', 'طالب للرفض')->value('id');
-
-        $this->authed($this->loginToken($admin))
-            ->postJson("/api/admin/student-requests/{$reqId}/reject", ['admin_note' => 'بيانات ناقصة'])
+        $this->authed($this->loginToken($manager))
+            ->postJson("/api/manager/student-requests/{$req->id}/reject", ['admin_note' => 'بيانات ناقصة'])
             ->assertOk();
 
         $notif = $teacher->notifications()->get()->firstWhere('data.type', 'request_rejected');

@@ -171,22 +171,23 @@ class ManagerManagementController extends Controller
 
             $manager->tokens()->delete(); // إبطال جلساته فوراً (آلية S1)
 
+            // الطلبات الواردة المعلّقة إلى مركزه: تبقى معلّقة حتى تعيين/تفعيل مدير نشط
+            // (مدير النظام ليس طرفاً في الطلبات ولا تؤول إليه)
             $pending = \App\Models\StudentRequest::where('status', 'pending')
-                ->where('type', 'transfer')
-                ->where('from_center_id', $centerId)
                 ->where('target_center_id', $centerId)
                 ->count();
         });
 
         if (!$active && $pending > 0) {
+            // تنبيه إداري فقط لمدير النظام (شأنه تعيين المديرين، لا الطلبات) — الرابط لصفحة المديرين
             $centerName = \App\Models\Center::where('id', $centerId)->value('name') ?? '—';
             \App\Notifications\InAppNotification::sendSafe(
                 User::where('role', 'admin')->get(),
-                'request_created',
-                'طلبات آلت إليك بعد تعطيل مدير مركز',
-                'عُطِّل مدير مركز «' . $centerName . '» وله ' . $pending . ' طلب نقل داخلي معلّق — اعتمادها أو رفضها صار إليك.',
+                'manager_deactivated',
+                'مركز بلا مدير نشط وله طلبات معلّقة',
+                'عُطِّل مدير مركز «' . $centerName . '» وللمركز ' . $pending . ' طلب وارد معلّق يبقى بلا مراجع حتى تعيين مدير نشط له.',
                 null,
-                'admin/requests.html'
+                'admin/managers.html'
             );
         }
 
@@ -195,8 +196,8 @@ class ManagerManagementController extends Controller
             'message' => $active
                 ? "تم تفعيل حساب مدير المركز «{$manager->name}»"
                 : "تم تعطيل حساب «{$manager->name}» — لن يستطيع الدخول"
-                    . ($pending > 0 ? "، وآل {$pending} طلب معلّق لمدير النظام" : ''),
-            'data' => ['id' => $manager->id, 'is_active' => $manager->is_active, 'pending_transferred' => $pending],
+                    . ($pending > 0 ? "، ويبقى {$pending} طلب وارد معلّق حتى تعيين مدير نشط للمركز" : ''),
+            'data' => ['id' => $manager->id, 'is_active' => $manager->is_active, 'pending_requests' => $pending],
         ]);
     }
 }

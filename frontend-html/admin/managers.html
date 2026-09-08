@@ -144,10 +144,10 @@
                       + `<span style="color:#B23A48;font-weight:700;">لن يستطيع تسجيل الدخول، وتُنهى جلساته فوراً.</span>`
                       // القاعدة: مدير واحد لكل مركز — فالتعطيل يترك المركز بلا مدير نشط دائماً
                       + `<div style="margin-top:10px;background:rgba(212,175,55,.16);border:1.5px solid #D4AF37;border-radius:10px;padding:10px 13px;font-size:13px;color:#9A7A1E;font-weight:700;">`
-                      + `⚠ سيبقى مركز «${centerName}» <u>بلا مدير نشط</u> — وتؤول طلبات النقل الداخلية المعلّقة والجديدة إلى مدير النظام.</div>`
+                      + `⚠ سيبقى مركز «${centerName}» <u>بلا مدير نشط</u> — وتبقى طلبات الطلاب الواردة إليه معلّقة (ولا تُقبل طلبات جديدة) حتى تعيين مدير نشط.</div>`
                       + `<span style="color:#7A8F82;font-size:13px;">تبقى كل بياناته وارتباطاته التاريخية كما هي، ويمكن إعادة تفعيله لاحقاً.</span>`
                     : `تفعيل حساب <strong>${UI.escapeHtml(m.name)}</strong>؟<br>`
-                      + `<span style="color:#7A8F82;">سيعود لإدارة مركز «${centerName}» وتُوجَّه إليه طلباته الداخلية من جديد.</span>`;
+                      + `<span style="color:#7A8F82;">سيعود لإدارة مركز «${centerName}» وتُوجَّه إليه طلبات الطلاب الواردة من جديد.</span>`;
                 const ok = await UI.confirmAction({
                     title: deact ? 'تعطيل حساب مدير المركز' : 'تفعيل حساب مدير المركز',
                     html, okText: deact ? 'تأكيد التعطيل' : 'تأكيد التفعيل', cancelText: 'إلغاء',

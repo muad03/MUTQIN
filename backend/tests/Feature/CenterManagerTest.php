@@ -9,7 +9,7 @@ use Tests\TestCase;
 
 /**
  * «مدير المركز» (center_manager): مصفوفة الأدوار، تضييق النطاق بمركزه،
- * مدير واحد لكل مركز، الاعتماد الداخلي، وfallback مدير النظام.
+ * مدير واحد لكل مركز، واعتماد الطلبات الواردة إلى مركزه (مدير النظام ليس طرفاً).
  */
 class CenterManagerTest extends TestCase
 {
@@ -43,7 +43,7 @@ class CenterManagerTest extends TestCase
         }
 
         // مدير المركز على مسارات غيره → 403
-        foreach (['/api/teachers', '/api/students', '/api/admin/student-requests', '/api/parent/children', '/api/admin/managers'] as $route) {
+        foreach (['/api/teachers', '/api/students', '/api/parent/children', '/api/admin/managers'] as $route) {
             $this->authed($tokens['manager'])->getJson($route)->assertStatus(403, "فشل: manager على {$route}");
         }
     }
@@ -95,45 +95,36 @@ class CenterManagerTest extends TestCase
         ])->assertOk();
     }
 
-    public function test_manager_approves_internal_transfer_but_not_cross_center(): void
+    public function test_manager_approves_only_requests_targeting_his_center(): void
     {
         $centerA = $this->makeCenter();
         $centerB = $this->makeCenter();
         $managerA = $this->makeManager($centerA);
-        $tA1 = $this->makeTeacher($centerA);
-        $tA2 = $this->makeTeacher($centerA);
-        $tB  = $this->makeTeacher($centerB);
+        $managerB = $this->makeManager($centerB);
+        $tA = $this->makeTeacher($centerA);
+        $tB = $this->makeTeacher($centerB);
 
-        // طلب داخلي: طالب عند tA1، يطلبه tA2 (from=target=A)
-        $sA = $this->makeStudent($tA1);
-        $this->authed($this->loginToken($tA2))->postJson('/api/student-requests', [
-            'type' => 'transfer', 'student_id' => $sA->id,
-        ])->assertStatus(201);
-        $internal = StudentRequest::latest('id')->first();
-
-        // طلب عابر: طالب في B يطلبه tA2 (from=B, target=A)
-        $sB = $this->makeStudent($tB);
-        $this->authed($this->loginToken($tA2))->postJson('/api/student-requests', [
-            'type' => 'transfer', 'student_id' => $sB->id,
-        ])->assertStatus(201);
-        $cross = StudentRequest::latest('id')->first();
+        // صف إضافة قديم وارد إلى A، وآخر إلى B (لا يخص مدير A)
+        $incoming = $this->makeLegacyAddRequest($tA, ['student_name' => 'طالب وارد']);
+        $foreign  = $this->makeLegacyAddRequest($tB, ['student_name' => 'طالب مركز آخر']);
 
         $token = $this->loginToken($managerA);
 
-        // قائمة المدير: الداخلي فقط
+        // قائمة المدير: الوارد إلى مركزه فقط
         $ids = collect($this->authed($token)->getJson('/api/manager/student-requests')->json('data'))->pluck('id');
-        $this->assertTrue($ids->contains($internal->id));
-        $this->assertFalse($ids->contains($cross->id));
+        $this->assertTrue($ids->contains($incoming->id));
+        $this->assertFalse($ids->contains($foreign->id));
 
-        // العابر → 403 برسالة عربية؛ الداخلي → اعتماد ينفّذ النقل
-        $this->authed($token)->postJson("/api/manager/student-requests/{$cross->id}/approve")
+        // طلب مركز آخر → 403؛ الوارد → اعتماد يُنشئ الطالب لدى المحفّظ
+        $this->authed($token)->postJson("/api/manager/student-requests/{$foreign->id}/approve")
             ->assertStatus(403);
-        $this->authed($token)->postJson("/api/manager/student-requests/{$internal->id}/approve")
+        $this->authed($token)->postJson("/api/manager/student-requests/{$incoming->id}/approve")
             ->assertOk();
-        $this->assertSame($tA2->id, $sA->fresh()->teacher_id, 'النقل الداخلي لم يُنفَّذ');
+        $this->assertDatabaseHas('students', ['name' => 'طالب وارد', 'teacher_id' => $tA->id, 'center_id' => $centerA->id]);
+        $this->assertSame(0, $managerB->notifications()->where('data->type', 'request_approved')->count());
     }
 
-    // ===== مدير واحد لكل مركز + fallback =====
+    // ===== مدير واحد لكل مركز + تعطيل المدير =====
 
     public function test_one_manager_per_center_max(): void
     {
@@ -179,61 +170,55 @@ class CenterManagerTest extends TestCase
           ->assertJsonValidationErrors(['email_prefix']);
     }
 
-    public function test_internal_request_notifies_manager_else_admin_fallback(): void
+    public function test_transfer_request_notifies_target_manager_only_and_never_admin(): void
     {
         $admin = $this->makeAdmin();
-
-        // مركز له مدير: الإشعار للمدير لا لمدير النظام
         $centerA = $this->makeCenter();
-        $managerA = $this->makeManager($centerA);
-        $tA1 = $this->makeTeacher($centerA);
-        $tA2 = $this->makeTeacher($centerA);
-        $sA = $this->makeStudent($tA1);
-        $this->authed($this->loginToken($tA2))->postJson('/api/student-requests', [
-            'type' => 'transfer', 'student_id' => $sA->id,
-        ])->assertStatus(201);
-        $this->assertSame(1, $managerA->notifications()->count(), 'مدير المركز لم يُشعَر');
-        $this->assertSame(0, $admin->notifications()->count(), 'مدير النظام أُشعر رغم وجود مدير مركز');
-
-        // مركز بلا مدير: fallback لمدير النظام
         $centerB = $this->makeCenter();
-        $tB1 = $this->makeTeacher($centerB);
-        $tB2 = $this->makeTeacher($centerB);
-        $sB = $this->makeStudent($tB1);
-        $this->authed($this->loginToken($tB2))->postJson('/api/student-requests', [
-            'type' => 'transfer', 'student_id' => $sB->id,
+        $managerA = $this->makeManager($centerA);
+        $managerB = $this->makeManager($centerB);
+        $tA = $this->makeTeacher($centerA);
+        $s = $this->makeStudent($tA);
+
+        $this->authed($this->loginToken($managerA))->postJson('/api/manager/student-requests', [
+            'student_id' => $s->id, 'target_center_id' => $centerB->id,
         ])->assertStatus(201);
-        $this->assertSame(1, $admin->notifications()->count(), 'الـ fallback لمدير النظام لم يعمل');
+
+        $this->assertSame(1, $managerB->notifications()->count(), 'مدير المركز المستهدف لم يُشعَر');
+        $this->assertSame(0, $managerA->notifications()->count());
+        $this->assertSame(0, $admin->notifications()->count(), 'مدير النظام أُشعر رغم أنه ليس طرفاً');
+        $this->assertSame(0, $tA->notifications()->count());
     }
 
-    /** بديل الحذف: التعطيل — الطلبات المعلّقة تؤول لمدير النظام ويعتمدها فعلاً. */
-    public function test_deactivating_manager_hands_pending_requests_to_admin(): void
+    /** بديل الحذف: التعطيل — الطلبات الواردة المعلّقة تبقى معلّقة (لا تؤول لمدير النظام) حتى تفعيل/تعيين مدير. */
+    public function test_deactivating_manager_keeps_pending_requests_and_only_informs_admin(): void
     {
         $admin   = $this->makeAdmin();
         $center  = $this->makeCenter(['name' => 'مركز الاختبار']);
         $manager = $this->makeManager($center);
-        $t1 = $this->makeTeacher($center);
-        $t2 = $this->makeTeacher($center);
-        $s  = $this->makeStudent($t1);
+        $t = $this->makeTeacher($center);
 
-        // طلب داخلي معلّق
-        $this->authed($this->loginToken($t2))->postJson('/api/student-requests', [
-            'type' => 'transfer', 'student_id' => $s->id,
-        ])->assertStatus(201);
+        // طلب وارد معلّق (صف إضافة قديم)
+        $this->makeLegacyAddRequest($t, ['student_name' => 'طالب معلّق']);
 
         $adminNotifsBefore = $admin->notifications()->count();
         $this->authed($this->loginToken($admin))
             ->putJson('/api/admin/managers/' . $manager->id . '/status', ['is_active' => false])
-            ->assertOk()->assertJsonPath('data.pending_transferred', 1);
+            ->assertOk()->assertJsonPath('data.pending_requests', 1);
 
-        // مدير النظام أُشعر بأيلولة الطلبات إليه
+        // مدير النظام يُبلَّغ إدارياً فقط (رابط صفحة المديرين لا الطلبات) والطلب يبقى معلّقاً
         $this->assertSame($adminNotifsBefore + 1, $admin->notifications()->count());
         $latest = $admin->notifications()->latest()->first();
-        $this->assertStringContainsString('آل', $latest->data['title'] . $latest->data['body']);
-        // والطلب لا يزال معلّقاً ويعتمده مدير النظام
-        $req = StudentRequest::where('student_id', $s->id)->first();
+        $this->assertSame('manager_deactivated', $latest->data['type']);
+        $this->assertSame('admin/managers.html', $latest->data['link']);
+
+        $req = StudentRequest::where('student_name', 'طالب معلّق')->first();
+        $this->assertSame('pending', $req->status);
+
+        // إعادة التفعيل: المدير يعتمده عادياً
         $this->authed($this->loginToken($admin))
-            ->postJson("/api/admin/student-requests/{$req->id}/approve")
-            ->assertOk();
+            ->putJson('/api/admin/managers/' . $manager->id . '/status', ['is_active' => true])->assertOk();
+        $this->authed($this->loginToken($manager))
+            ->postJson("/api/manager/student-requests/{$req->id}/approve")->assertOk();
     }
 }

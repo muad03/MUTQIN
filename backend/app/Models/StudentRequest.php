@@ -5,7 +5,9 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 
 /**
- * طلب طالب (إضافة جديد / نقل موجود) ينتظر موافقة الأدمن.
+ * طلب طالب (إضافة جديد يُنشئه المحفّظ / نقل موجود يُنشئه مدير المركز المصدر) ينتظر
+ * موافقة مدير المركز المستهدف — مدير النظام ليس طرفاً. target_teacher_id فارغ في
+ * طلب النقل حتى يعيّنه مدير المركز المستهدف عند الاعتماد.
  * لا يُحدث أي تغيير على جدول students إلا داخل مسار الموافقة (StudentRequestController@approve).
  */
 class StudentRequest extends Model
@@ -34,7 +36,7 @@ class StudentRequest extends Model
         'admin_note',
     ];
 
-    // المحفّظ مقدّم الطلب
+    // مقدّم الطلب (محفّظ في الإضافة / مدير المركز المصدر في النقل)
     public function requestedBy()
     {
         return $this->belongsTo(User::class, 'requested_by');

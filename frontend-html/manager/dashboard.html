@@ -52,7 +52,7 @@
                   ${stat(s.total_teachers ?? 0, 'محفّظو المركز', 'gold')}
                   ${stat(s.today_present ?? 0, 'حاضر اليوم', 'blue')}
                   ${stat(s.today_absent ?? 0, 'غائب اليوم', 'red')}
-                  ${stat(s.pending_requests ?? 0, 'طلبات نقل معلّقة', 'gold')}
+                  ${stat(s.pending_requests ?? 0, 'طلبات واردة معلّقة', 'gold')}
                 </div>
 
                 <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px;">
@@ -61,7 +61,7 @@
                   <a class="mq-card" href="attendance.html" style="text-decoration:none;"><div class="mq-card-body" style="display:flex;align-items:center;gap:12px;">
                     ${UI.ic('attendance', 26, '#04532F')}<div><b style="color:#04361F;">استيراد الحضور</b><div style="font-size:12px;color:#7A8F82;">ملف البصمة (xlsx)</div></div></div></a>
                   <a class="mq-card" href="requests.html" style="text-decoration:none;"><div class="mq-card-body" style="display:flex;align-items:center;gap:12px;">
-                    ${UI.ic('requests', 26, '#04532F')}<div><b style="color:#04361F;">طلبات النقل الداخلية</b><div style="font-size:12px;color:#7A8F82;">اعتماد/رفض ضمن المركز</div></div></div></a>
+                    ${UI.ic('requests', 26, '#04532F')}<div><b style="color:#04361F;">طلبات مركزي</b><div style="font-size:12px;color:#7A8F82;">اعتماد الواردة وطلب النقل إلى مركز آخر</div></div></div></a>
                 </div>`;
         } catch (e) { UI.toast(e.message, 'danger'); }
     }

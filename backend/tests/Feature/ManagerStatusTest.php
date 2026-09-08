@@ -9,8 +9,8 @@ use Tests\TestCase;
 
 /**
  * تفعيل/تعطيل مدير المركز بديلاً عن الحذف: المعطَّل لا يدخل، توكناته تُبطَل
- * فوراً، التبديل لمدير النظام حصراً، ولا يُوجَّه إليه طلب جديد — تؤول
- * الطلبات الداخلية لمدير النظام (وإلا بقيت معلّقة بلا مراجع).
+ * فوراً، التبديل لمدير النظام حصراً، ولا يُوجَّه إليه طلب جديد — الطلبات
+ * الواردة المعلّقة تبقى معلّقة (مدير النظام ليس طرفاً) حتى تعيين مدير نشط.
  */
 class ManagerStatusTest extends TestCase
 {
@@ -44,7 +44,7 @@ class ManagerStatusTest extends TestCase
             ->putJson("/api/admin/managers/{$manager->id}/status", ['is_active' => false])
             ->assertOk()
             ->assertJsonPath('data.is_active', false)
-            ->assertJsonPath('data.pending_transferred', 0);
+            ->assertJsonPath('data.pending_requests', 0);
 
         // الجلسات أُنهيت فوراً — لا انتظار للدخول التالي
         $this->assertSame(0, $manager->tokens()->count());
@@ -93,40 +93,34 @@ class ManagerStatusTest extends TestCase
         $this->assertDatabaseHas('users', ['id' => $manager->id]); // باقٍ بكل ارتباطاته
     }
 
-    public function test_internal_requests_route_to_admin_while_manager_is_inactive(): void
+    public function test_pending_requests_are_not_routed_to_admin_while_manager_is_inactive(): void
     {
         $admin   = $this->makeAdmin();
         $center  = $this->makeCenter();
         $manager = $this->makeManager($center);
-        $from    = $this->makeTeacher($center);
-        $to      = $this->makeTeacher($center);
-        $s1      = $this->makeStudent($from);
-        $s2      = $this->makeStudent($from);
+        $teacher = $this->makeTeacher($center);
+        $this->makeLegacyAddRequest($teacher); // طلب وارد معلّق
 
-        // مدير نشط: الطلب الداخلي يذهب إليه هو
-        $toToken = $this->loginToken($to);
-        $this->authed($toToken)->postJson('/api/student-requests', [
-            'type' => 'transfer', 'student_id' => $s1->id,
-        ])->assertCreated()->assertJsonPath('message', 'تم إرسال طلب النقل لمدير المركز، سيُنفَّذ بعد الموافقة');
-        $this->assertSame(1, $manager->notifications()->count());
-        $this->assertSame(0, $admin->notifications()->count());
-
-        // التعطيل يبلّغ الأدمن بالمعلّق الذي آل إليه
-        $this->flushHeaders();
+        // التعطيل يبلّغ مدير النظام إدارياً بالمعلّق الذي ينتظر مديراً (لا يؤول إليه)
         $r = $this->authed($this->loginToken($admin))
             ->putJson("/api/admin/managers/{$manager->id}/status", ['is_active' => false])->assertOk();
-        $this->assertSame(1, $r->json('data.pending_transferred'));
-        $this->assertStringContainsString('آل 1 طلب معلّق لمدير النظام', $r->json('message'));
+        $this->assertSame(1, $r->json('data.pending_requests'));
+        $this->assertStringContainsString('يبقى 1 طلب وارد معلّق', $r->json('message'));
         $this->assertSame(1, $admin->notifications()->count());
+        $this->assertSame('admin/managers.html', $admin->notifications()->first()->data['link']);
+        $this->assertSame(0, $manager->notifications()->count());
 
-        // وبعده: الطلب الداخلي الجديد يؤول لمدير النظام لا للمعطَّل
+        // وبعده: لا يُقبل طلب نقل جديد إلى مركزه (لا مدير نشط) ولا يؤول لمدير النظام
+        $other = $this->makeCenter();
+        $managerO = $this->makeManager($other);
+        $sO = $this->makeStudent($this->makeTeacher($other));
         $this->flushHeaders();
-        $this->authed($toToken)->postJson('/api/student-requests', [
-            'type' => 'transfer', 'student_id' => $s2->id,
-        ])->assertCreated()->assertJsonPath('message', 'تم إرسال طلب النقل للمدير، سيُنفَّذ بعد الموافقة');
+        $this->authed($this->loginToken($managerO))->postJson('/api/manager/student-requests', [
+            'student_id' => $sO->id, 'target_center_id' => $center->id,
+        ])->assertStatus(422);
 
-        $this->assertSame(1, $manager->notifications()->count()); // لم يزد
-        $this->assertSame(2, $admin->notifications()->count());   // التنبيه + الطلب الجديد
-        $this->assertSame(2, StudentRequest::where('status', 'pending')->count());
+        $this->assertSame(0, $manager->notifications()->count());
+        $this->assertSame(1, $admin->notifications()->count());   // التنبيه الإداري فقط
+        $this->assertSame(1, StudentRequest::where('status', 'pending')->count());
     }
 }

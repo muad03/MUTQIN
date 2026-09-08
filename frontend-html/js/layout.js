@@ -17,14 +17,12 @@
             ['centers',   'المراكز', 'centers', 'admin/centers.html'],
             ['supervisors', 'مدراء المراكز', 'teachers', 'admin/managers.html'],
             ['students',  'جميع الطلاب', 'students', 'admin/students.html'],
-            ['requests',  'الطلبات', 'requests', 'admin/requests.html'],
             ['reports',   'التقارير', 'report', 'admin/reports.html'],
         ],
         teacher: [
             ['dashboard',   'الرئيسية', 'home', 'teacher/dashboard.html'],
             ['profile',     'ملفّي الشخصي', 'teachers', 'teacher/profile.html'],
             ['students',    'طلابي', 'students', 'teacher/students.html'],
-            ['requests',    'طلباتي', 'requests', 'teacher/requests.html'],
             ['attendance',  'الحضور والغياب', 'attendance', 'teacher/attendance.html'],
             ['memorization','تتبّع الحفظ', 'memo', 'teacher/memorization.html'],
             ['tests',       'الاختبارات الأسبوعية', 'tests', 'teacher/weekly-tests.html'],
@@ -38,7 +36,7 @@
             ['attendance', 'استيراد الحضور', 'attendance', 'manager/attendance.html'],
             ['attendance-review', 'مراجعة الحضور', 'report', 'manager/attendance-review.html'],
             ['reports',    'التقارير', 'report', 'manager/reports.html'],
-            ['requests',   'طلبات النقل الداخلية', 'requests', 'manager/requests.html'],
+            ['requests',   'الطلبات', 'requests', 'manager/requests.html'],
         ],
         parent: [
             ['dashboard', 'أبنائي', 'students', 'parent/dashboard.html'],

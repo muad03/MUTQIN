@@ -36,14 +36,27 @@ class CenterManagerController extends Controller
                     'total_teachers'   => User::where('role', 'teacher')->where('center_id', $centerId)->count(),
                     'today_present'    => Attendance::whereIn('student_id', $studentIds)->where('date', today())->where('status', 'present')->count(),
                     'today_absent'     => Attendance::whereIn('student_id', $studentIds)->where('date', today())->where('status', 'absent')->count(),
+                    // الطلبات الواردة المعلّقة (إضافة من محفّظيه أو نقل من مركز آخر إليه) — هو مرجعها الوحيد
                     'pending_requests' => StudentRequest::where('status', 'pending')
-                        ->where('type', 'transfer')
-                        ->where('from_center_id', $centerId)
                         ->where('target_center_id', $centerId)
                         ->count(),
                 ],
             ],
         ]);
+    }
+
+    /**
+     * المراكز النشطة الأخرى (id/اسم/مدينة) — وجهات طلب النقل من مركزه.
+     * لا يكشف مركزه نفسه ولا المعطَّلة؛ قائمة مختصرة بلا بيانات حسّاسة.
+     */
+    public function otherCenters(Request $request)
+    {
+        $centers = \App\Models\Center::where('is_active', true)
+            ->where('id', '!=', $request->user()->center_id)
+            ->orderBy('name')
+            ->get(['id', 'name', 'city']);
+
+        return response()->json(['success' => true, 'data' => $centers]);
     }
 
     /**

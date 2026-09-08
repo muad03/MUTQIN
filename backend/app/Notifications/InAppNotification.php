@@ -11,7 +11,8 @@ use Illuminate\Support\Facades\Notification as NotificationFacade;
  * يستقبل النوع والبيانات جاهزةً، فتُضاف أنواع جديدة بلا صنف جديد ولا إعادة هيكلة.
  *
  * الأنواع الحالية:
- *   request_created / request_approved / request_rejected  (طلبات الطلاب → الأدمن/المحفّظ)
+ *   request_created / request_approved / request_rejected  (طلبات الطلاب → مدير المركز المستهدف / صاحب الطلب)
+ *   manager_deactivated                                     (تنبيه إداري → مدير النظام: مركز بلا مدير وله طلبات معلّقة)
  *   memorization_added / test_added                         (حفظ/اختبار → ولي الأمر)
  *
  * الشكل المخزّن (JSON ثابت): { type, title, body, ref_id, link }

@@ -74,7 +74,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/manager/reports/at-risk/pdf', [\App\Http\Controllers\Api\ReportPdfController::class, 'managerAtRisk']);
         Route::get('/manager/reports/teachers/pdf', [\App\Http\Controllers\Api\ReportPdfController::class, 'managerTeachers']);
         // طلبات النقل الداخلية لمركزه (from=target=مركزه) — العابرة تبقى لمدير النظام
+        // الطلبات — مدير المركز هو مرجعها الوحيد (مدير النظام ليس طرفاً): الواردة إلى مركزه يعتمدها/يرفضها،
+        // وطلبات النقل إلى مركز آخر يُنشئها هو (المصدر) ويستقبلها مدير المركز المستهدف
+        Route::get('/manager/centers', [\App\Http\Controllers\Api\CenterManagerController::class, 'otherCenters']); // المراكز النشطة الأخرى (وجهات النقل)
         Route::get('/manager/student-requests', [StudentRequestController::class, 'managerIndex']);
+        Route::post('/manager/student-requests', [StudentRequestController::class, 'managerStore']); // طلب نقل طالب من مركزه إلى مركز آخر
         Route::post('/manager/student-requests/{id}/approve', [StudentRequestController::class, 'approve']);
         Route::post('/manager/student-requests/{id}/reject', [StudentRequestController::class, 'reject']);
     });
@@ -109,10 +113,6 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/reports/admin/at-risk/pdf', [\App\Http\Controllers\Api\ReportPdfController::class, 'atRisk']);
         Route::get('/reports/admin/overview/pdf', [\App\Http\Controllers\Api\ReportPdfController::class, 'overview']);
 
-        // طلبات الطلاب — مراجعة الأدمن (موافقة/رفض تُنفّذ التغيير الفعلي على students)
-        Route::get('/admin/student-requests', [StudentRequestController::class, 'adminIndex']);
-        Route::post('/admin/student-requests/{id}/approve', [StudentRequestController::class, 'approve']);
-        Route::post('/admin/student-requests/{id}/reject', [StudentRequestController::class, 'reject']);
     });
 
     // مسارات المعلم والمدير (Teacher & Admin)
@@ -132,9 +132,6 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/teacher/messages/{student}', [\App\Http\Controllers\Api\MessageController::class, 'send']);
 
         // طلبات الطلاب — إنشاء/متابعة من المحفّظ (لا تغيير فعلي على students؛ ينتظر موافقة الأدمن)
-        Route::get('/student-requests', [StudentRequestController::class, 'index']);          // طلباتي
-        Route::get('/student-requests/search-students', [StudentRequestController::class, 'searchStudents']); // بحث لإنشاء طلب نقل
-        Route::post('/student-requests', [StudentRequestController::class, 'store']);         // إنشاء طلب add/transfer
 
         Route::get('/attendance', [AttendanceController::class, 'index']);
         Route::post('/attendance', [AttendanceController::class, 'store']);

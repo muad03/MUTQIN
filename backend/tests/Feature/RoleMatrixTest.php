@@ -30,7 +30,7 @@ class RoleMatrixTest extends TestCase
         $matrix = [
             '/api/teachers'               => ['admin' => 200, 'teacher' => 403, 'parent' => 403],
             '/api/centers'                => ['admin' => 200, 'teacher' => 403, 'parent' => 403],
-            '/api/admin/student-requests' => ['admin' => 200, 'teacher' => 403, 'parent' => 403],
+            '/api/manager/student-requests' => ['admin' => 403, 'teacher' => 403, 'parent' => 403], // طلبات الطلاب لمدير المركز حصراً
             '/api/students'               => ['admin' => 200, 'teacher' => 200, 'parent' => 403],
             '/api/attendance'             => ['admin' => 200, 'teacher' => 200, 'parent' => 403],
             '/api/memorizations'          => ['admin' => 200, 'teacher' => 200, 'parent' => 403],

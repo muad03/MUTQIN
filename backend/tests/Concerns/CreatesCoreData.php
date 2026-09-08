@@ -73,6 +73,27 @@ trait CreatesCoreData
         ], $attrs));
     }
 
+    /**
+     * صف طلب إضافة «قديم» (قبل إلغاء مسارات المحفّظ) — يُزرع مباشرة لأن لا مسار يُنشئه اليوم؛
+     * يختبر أن مدير المركز ما زال يصفّي المعلّق منها.
+     */
+    protected function makeLegacyAddRequest(User $teacher, array $attrs = []): \App\Models\StudentRequest
+    {
+        static $rseq = 0;
+        $rseq++;
+
+        return \App\Models\StudentRequest::create(array_merge([
+            'type'              => 'add',
+            'status'            => 'pending',
+            'requested_by'      => $teacher->id,
+            'target_center_id'  => $teacher->center_id,
+            'target_teacher_id' => $teacher->id,
+            'national_id'       => '1555000' . str_pad((string) $rseq, 5, '0', STR_PAD_LEFT),
+            'nationality_type'  => 'libyan',
+            'student_name'      => "طالب طلب قديم {$rseq}",
+        ], $attrs));
+    }
+
     /** توكن حقيقي عبر مسار الدخول — يحمل صلاحيات الدور الفعلية ('*' أو 'parent'). */
     protected function loginToken(User $user): string
     {

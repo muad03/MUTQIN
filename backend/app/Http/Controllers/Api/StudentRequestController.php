@@ -3,229 +3,160 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Center;
 use App\Models\StudentRequest;
 use App\Models\Student;
 use App\Models\User;
 use App\Notifications\InAppNotification;
-use App\Support\ArabicText;
 use App\Support\ParentResolver;
-use App\Support\PhoneNumber;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Str;
-use Illuminate\Validation\Rule;
 
 /**
- * نظام طلبات الطلاب — المحفّظ يُنشئ طلباً (إضافة طالب جديد أو نقل طالب موجود إليه)،
- * والأدمن وحده يوافق فيُنفَّذ التغيير فعلياً على جدول students.
+ * نظام طلبات الطلاب — مدير المركز (center_manager) هو المرجع الوحيد للطلبات،
+ * ومدير النظام (admin) والمحفّظ (teacher) ليسا طرفين فيها (لا مسارات لهما إطلاقاً).
  *
- * مسارات المحفّظ: store / index / searchStudents  (مجموعة teacher)
- * مسارات الأدمن:  adminIndex / approve / reject     (مجموعة admin)
+ *  - طلب النقل (transfer): يُنشئه مدير المركز المصدر (A) لطالب من مركزه إلى مركز آخر (B)
+ *    → يستقبله ويعتمده/يرفضه مدير المركز المستهدف (B) وحده.
+ *  - طلب الإضافة (add): لم يعد يُنشأ (أُلغيت صفحة «طلباتي» ومساراتها) — الصفوف القديمة
+ *    المعلّقة تبقى قابلة للاعتماد/الرفض من مدير مركزها حتى تُصفّى.
+ *
+ * مسارات مدير المركز: managerIndex / managerStore / approve / reject  (مجموعة manager)
  */
 class StudentRequestController extends Controller
 {
-    /**
-     * قواعد رقم هوية الطالب حسب الجنسية — مطلوب هنا لأنه مفتاح فحص التكرار/التعرّف.
-     *  - ليبي:  12 رقماً يبدأ بـ1/2.  - أجنبي: نص حرّ (جواز/إقامة).
-     */
-    protected function identityRules(string $natType): array
+    /** مدير المركز النشط لمركز ما (مدير واحد كحدّ أقصى لكل مركز) — أو null. */
+    protected function activeManagerOf(?int $centerId): ?User
     {
-        return $natType === 'foreigner'
-            ? ['required', 'string', 'max:32']
-            : ['required', 'digits:12', 'regex:/^[12]\d{11}$/'];
-    }
-
-    /** قواعد رقم هوية ولي الأمر (اختياري) حسب الجنسية — بلا قيد unique (المطابقة/الإنشاء تتكفّل). */
-    protected function parentIdentityRules(string $natType): array
-    {
-        return $natType === 'foreigner'
-            ? ['nullable', 'string', 'max:32']
-            : ['nullable', 'digits:12', 'regex:/^[12]\d{11}$/'];
-    }
-
-    protected function nationalIdMessages(): array
-    {
-        return [
-            'national_id.required' => 'رقم الهوية مطلوب للتحقّق',
-            'age.between'          => 'العمر يجب أن يكون بين 1 و120 سنة',
-            'national_id.digits'   => 'الرقم الوطني يجب أن يكون 12 رقماً',
-            'national_id.regex'    => 'الرقم الوطني الليبي يبدأ بـ 1 (ذكر) أو 2 (أنثى) ويتكوّن من 12 رقماً',
-            'nationality_name.required_if'          => 'اسم الجنسية مطلوب للطالب الأجنبي',
-            'guardian_nationality_name.required_if' => 'اسم الجنسية مطلوب لولي الأمر الأجنبي',
-            'guardian_id_number.digits' => 'الرقم الوطني لولي الأمر يجب أن يكون 12 رقماً',
-            'guardian_id_number.regex'  => 'الرقم الوطني الليبي لولي الأمر يبدأ بـ 1/2 ويتكوّن من 12 رقماً',
-        ];
-    }
-
-    // =============================================
-    // مسارات المحفّظ — Teacher Routes
-    // =============================================
-
-    /**
-     * إنشاء طلب (إضافة / نقل). مقدّم الطلب يجب أن يكون محفّظاً (لا أدمن — الأدمن يضيف مباشرة).
-     * وجهة الطلب دائماً = المحفّظ نفسه ومركزه (يطلب الطالب «إليه»).
-     */
-    public function store(Request $request)
-    {
-        $user = $request->user();
-
-        // الأمان: مقدّم الطلب محفّظ فقط (الأدمن يمرّ من حارس teacher لكنه يضيف الطلاب مباشرة)
-        if (!$user->isTeacher()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'إنشاء الطلبات متاح للمحفّظين فقط',
-            ], 403);
+        if (!$centerId) {
+            return null;
         }
-        if (!$user->center_id) {
-            return response()->json([
-                'success' => false,
-                'message' => 'حسابك غير مرتبط بمركز — تواصل مع مدير النظام',
-            ], 422);
-        }
-
-        $type = $request->input('type', 'add');
-
-        if ($type === 'transfer') {
-            return $this->storeTransfer($request, $user);
-        }
-
-        return $this->storeAdd($request, $user);
-    }
-
-    /**
-     * طلب إضافة طالب جديد. يتحقّق بالرقم الوطني:
-     *  - غير موجود → ينشئ طلب add (pending).
-     *  - موجود → لا ينشئ طلباً، يرجع exists=true + مركز/محفّظ الطالب الحالي + اقتراح النقل.
-     */
-    protected function storeAdd(Request $request, User $user)
-    {
-        $natType  = $request->input('nationality_type', 'libyan');
-        $gNatType = $request->input('guardian_nationality_type', 'libyan');
-
-        $request->validate(array_merge([
-            'name'             => 'required|string|max:255',
-            'nationality_type' => 'nullable|in:libyan,foreigner',
-            'nationality_name' => 'required_if:nationality_type,foreigner|nullable|string|max:100',
-            'national_id'      => $this->identityRules($natType),
-            'age'              => 'nullable|integer|between:1,120',
-            'phone'            => 'nullable|string|max:20',
-            'guardian_name'    => 'nullable|string|max:255',
-            'guardian_phone'   => 'nullable|string|max:20',
-            'guardian_email'   => 'nullable|email|max:255',
-            'guardian_nationality_type' => 'nullable|in:libyan,foreigner',
-            'guardian_nationality_name' => 'required_if:guardian_nationality_type,foreigner|nullable|string|max:100',
-            'guardian_id_number'        => $this->parentIdentityRules($gNatType),
-        ], []), array_merge([
-            'name.required' => 'اسم الطالب مطلوب',
-        ], $this->nationalIdMessages()));
-
-        // التحقّق بالرقم الوطني فقط (فريد ورسمي)
-        $existing = Student::with(['center', 'teacher'])
-            ->where('national_id', $request->national_id)
+        return User::where('role', 'center_manager')
+            ->where('center_id', $centerId)
+            ->where('is_active', true)
             ->first();
+    }
 
-        if ($existing) {
-            // الطالب موجود → لا نُنشئ طلب إضافة. نقترح النقل.
-            $fromCenter  = $existing->center->name ?? '—';
-            $fromTeacher = $existing->teacher->name ?? 'غير محدّد';
-            return response()->json([
-                'success' => true,
-                'data' => [
-                    'exists'        => true,
-                    'student_id'    => $existing->id,
-                    'student_name'  => $existing->name,
-                    'from_center'   => $fromCenter,
-                    'from_teacher'  => $fromTeacher,
-                    'target_center' => $user->center->name ?? '—',
-                ],
-                'message' => "هذا الطالب موجود في مركز [{$fromCenter}] مع المحفّظ [{$fromTeacher}]. "
-                    . "هل تريد طلب نقله إلى مركزك [" . ($user->center->name ?? '—') . "]؟",
-            ]);
+    // =============================================
+    // مسارات مدير المركز — Center Manager Routes
+    // =============================================
+
+    /**
+     * طلبات مدير المركز (المعلّقة افتراضياً؛ ?status=all للكل):
+     *  - الواردة (incoming): كل طلب وجهته مركزه (نقل من مركز آخر إليه، أو إضافة قديمة معلّقة) — يعتمدها/يرفضها.
+     *  - الصادرة (outgoing): طلبات النقل التي أنشأها من مركزه إلى مركز آخر — للمتابعة فقط.
+     * طلبات المراكز الأخرى لا تظهر إطلاقاً.
+     */
+    public function managerIndex(Request $request)
+    {
+        $c = $request->user()->center_id;
+        $query = StudentRequest::with(['requestedBy', 'targetCenter', 'targetTeacher', 'fromCenter', 'fromTeacher', 'student'])
+            ->where(function ($w) use ($c) {
+                $w->where('target_center_id', $c)
+                  ->orWhere(function ($o) use ($c) {
+                      $o->where('type', 'transfer')->where('from_center_id', $c);
+                  });
+            })
+            ->latest();
+
+        $status = $request->get('status', 'pending');
+        if ($status !== 'all') {
+            $query->where('status', $status);
         }
-
-        // منع تكرار طلب إضافة معلّق بنفس الرقم الوطني من نفس المحفّظ
-        $dup = StudentRequest::where('type', 'add')
-            ->where('status', 'pending')
-            ->where('national_id', $request->national_id)
-            ->where('requested_by', $user->id)
-            ->exists();
-        if ($dup) {
-            return response()->json([
-                'success' => false,
-                'message' => 'لديك طلب إضافة معلّق بنفس الرقم الوطني قيد المراجعة',
-            ], 422);
-        }
-
-        $req = StudentRequest::create([
-            'type'              => 'add',
-            'status'            => 'pending',
-            'requested_by'      => $user->id,
-            'target_center_id'  => $user->center_id,
-            'target_teacher_id' => $user->id,
-            'national_id'       => $request->national_id,
-            'nationality_type'  => $natType,
-            'nationality_name'  => $natType === 'foreigner' ? $request->nationality_name : null,
-            'student_name'      => $request->name,
-            'age'               => $request->age,
-            'phone'             => PhoneNumber::normalize($request->phone),
-            'guardian_name'     => $request->guardian_name,
-            'guardian_phone'    => PhoneNumber::normalize($request->guardian_phone),
-            'guardian_email'    => $request->guardian_email,
-            'guardian_nationality_type' => $gNatType,
-            'guardian_nationality_name' => $gNatType === 'foreigner' ? $request->guardian_nationality_name : null,
-            'guardian_id_number'        => $request->guardian_id_number,
-        ]);
-
-        // إشعار كل الأدمن دفعة واحدة (استعلام واحد)
-        InAppNotification::sendSafe(
-            User::where('role', 'admin')->get(),
-            'request_created',
-            'طلب جديد بانتظار الموافقة',
-            'المحفّظ «' . $user->name . '» أرسل طلب إضافة الطالب «' . $req->student_name . '».',
-            $req->id,
-            'admin/requests.html'
-        );
 
         return response()->json([
             'success' => true,
-            'message' => 'تم إرسال الطلب لمدير النظام، سيُضاف الطالب بعد الموافقة',
-            'data'    => ['exists' => false, 'request' => $req],
-        ], 201);
+            'data' => $query->get()->map(fn ($r) => $this->present($r, true, $c)),
+        ]);
     }
 
     /**
-     * طلب نقل طالب موجود إلى المحفّظ مقدّم الطلب (داخل المركز أو عبر المراكز).
+     * إنشاء طلب نقل طالب من مركز المدير (المصدر) إلى مركز آخر (المستهدف).
+     * المصدر يُفرض من حساب المدير، والطالب يجب أن يكون من مركزه، والمستهدف مركز نشط
+     * آخر له مدير نشط (هو المستلم الوحيد للإشعار). محفّظ الوجهة اختياري — يعيّنه
+     * مدير المركز المستهدف عند الاعتماد.
      */
-    protected function storeTransfer(Request $request, User $user)
+    public function managerStore(Request $request)
     {
+        $user = $request->user();
+        $c = (int) $user->center_id;
+
         $request->validate([
-            'student_id' => 'required|exists:students,id',
+            'student_id'        => 'required|integer|exists:students,id',
+            'target_center_id'  => 'required|integer|exists:centers,id',
+            'target_teacher_id' => 'nullable|integer',
         ], [
-            'student_id.required' => 'يجب تحديد الطالب المراد نقله',
-            'student_id.exists'   => 'الطالب المحدّد غير موجود',
+            'student_id.required'       => 'يجب تحديد الطالب المراد نقله',
+            'student_id.exists'         => 'الطالب المحدّد غير موجود',
+            'target_center_id.required' => 'يجب تحديد المركز المستهدف',
+            'target_center_id.exists'   => 'المركز المستهدف غير موجود',
         ]);
 
-        $student = Student::findOrFail($request->student_id);
+        $student = Student::with('teacher')->findOrFail($request->student_id);
 
-        // الطالب أصلاً عند هذا المحفّظ — لا داعي للنقل
-        if ($student->teacher_id === $user->id) {
+        // النطاق: الطالب من مركز المدير فقط (لا يُنشئ طلباً عن طلاب مراكز أخرى)
+        if ((int) $student->center_id !== $c) {
             return response()->json([
                 'success' => false,
-                'message' => 'هذا الطالب مسجّل لديك بالفعل',
+                'message' => 'هذا الطالب ليس من مركزك — لا يمكنك طلب نقله',
+            ], 403);
+        }
+        if (!$student->is_active) {
+            return response()->json([
+                'success' => false,
+                'message' => 'الطالب موقوف — فعّله أولاً قبل طلب نقله',
             ], 422);
         }
 
-        // منع تكرار طلب نقل معلّق لنفس الطالب من نفس المحفّظ
+        $targetCenterId = (int) $request->target_center_id;
+        if ($targetCenterId === $c) {
+            return response()->json([
+                'success' => false,
+                'message' => 'المركز المستهدف هو مركزك نفسه — اختر مركزاً آخر',
+            ], 422);
+        }
+        $targetCenter = Center::find($targetCenterId);
+        if (!$targetCenter || !$targetCenter->is_active) {
+            return response()->json([
+                'success' => false,
+                'message' => 'المركز المستهدف غير نشط',
+            ], 422);
+        }
+
+        // المستلم الوحيد: مدير المركز المستهدف النشط (مدير النظام ليس طرفاً في النقل)
+        $targetManager = $this->activeManagerOf($targetCenterId);
+        if (!$targetManager) {
+            return response()->json([
+                'success' => false,
+                'message' => 'المركز المستهدف بلا مدير نشط لاستقبال طلب النقل',
+            ], 422);
+        }
+
+        // محفّظ الوجهة (اختياري): محفّظ نشط ضمن المركز المستهدف
+        $targetTeacherId = null;
+        if ($request->filled('target_teacher_id')) {
+            $tt = User::where('id', $request->target_teacher_id)
+                ->where('role', 'teacher')->where('center_id', $targetCenterId)
+                ->where('is_active', true)->first();
+            if (!$tt) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'المحفّظ المحدّد ليس محفّظاً نشطاً ضمن المركز المستهدف',
+                    'errors'  => ['target_teacher_id' => ['المحفّظ المحدّد ليس محفّظاً نشطاً ضمن المركز المستهدف']],
+                ], 422);
+            }
+            $targetTeacherId = $tt->id;
+        }
+
+        // منع تكرار طلب نقل معلّق لنفس الطالب (من أي جهة)
         $dup = StudentRequest::where('type', 'transfer')
             ->where('status', 'pending')
             ->where('student_id', $student->id)
-            ->where('requested_by', $user->id)
             ->exists();
         if ($dup) {
             return response()->json([
                 'success' => false,
-                'message' => 'لديك طلب نقل معلّق لهذا الطالب قيد المراجعة',
+                'message' => 'يوجد طلب نقل معلّق لهذا الطالب قيد المراجعة',
             ], 422);
         }
 
@@ -238,152 +169,58 @@ class StudentRequestController extends Controller
             'nationality_type'  => $student->nationality_type ?: 'libyan',
             'nationality_name'  => $student->nationality_name,
             'student_name'      => $student->name,
-            'from_center_id'    => $student->center_id,
+            'from_center_id'    => $c,
             'from_teacher_id'   => $student->teacher_id,
-            'target_center_id'  => $user->center_id,
-            'target_teacher_id' => $user->id,
+            'target_center_id'  => $targetCenterId,
+            'target_teacher_id' => $targetTeacherId,
         ]);
 
-        // توجيه الإشعار: النقل الداخلي (from=target) → مدير المركز إن وُجد،
-        // وإلا (أو كان عابراً للمراكز) → مدير النظام كما كان.
-        // المدير المعطَّل لا يُوجَّه إليه شيء (لا يستطيع الدخول) — الطلب يؤول
-        // لمدير النظام كما لو لم يكن للمركز مدير، وإلا بقي معلّقاً بصمت.
-        $isInternal = (int) $req->from_center_id === (int) $req->target_center_id;
-        $centerManager = $isInternal
-            ? User::where('role', 'center_manager')->where('center_id', $req->target_center_id)
-                ->where('is_active', true)->first()
-            : null;
         InAppNotification::sendSafe(
-            $centerManager ?: User::where('role', 'admin')->get(),
+            $targetManager,
             'request_created',
-            'طلب جديد بانتظار الموافقة',
-            'المحفّظ «' . $user->name . '» أرسل طلب نقل الطالب «' . $req->student_name . '» إلى مركزه.',
+            'طلب نقل وارد بانتظار الموافقة',
+            'مدير مركز «' . ($user->center->name ?? '—') . '» طلب نقل الطالب «' . $req->student_name . '» إلى مركزك.',
             $req->id,
-            $centerManager ? 'manager/requests.html' : 'admin/requests.html'
+            'manager/requests.html'
         );
 
         return response()->json([
             'success' => true,
-            'message' => $centerManager ? 'تم إرسال طلب النقل لمدير المركز، سيُنفَّذ بعد الموافقة' : 'تم إرسال طلب النقل للمدير، سيُنفَّذ بعد الموافقة',
-            'data'    => ['request' => $req],
+            'message' => 'تم إرسال طلب النقل لمدير مركز «' . $targetCenter->name . '»، سيُنفَّذ بعد موافقته',
+            'data'    => ['request' => $this->present($req->fresh(['requestedBy', 'targetCenter', 'targetTeacher', 'fromCenter', 'fromTeacher']), true, $c)],
         ], 201);
     }
 
     /**
-     * بحث الطلاب لإنشاء طلب نقل — عبر كل المراكز (بالاسم أو الرقم الوطني).
-     * حقول مختصرة فقط (لا بيانات حسّاسة كاملة). متاح للمحفّظ والأدمن.
-     */
-    public function searchStudents(Request $request)
-    {
-        $q = trim((string) $request->get('q', ''));
-        if (mb_strlen($q) < 2) {
-            return response()->json(['success' => true, 'data' => []]);
-        }
-
-        $qName = ArabicText::stripTashkeel($q);
-
-        $students = Student::with(['center', 'teacher'])
-            ->where(function ($w) use ($q, $qName) {
-                $w->where('national_id', 'like', "%{$q}%")
-                  ->orWhere('name', 'like', "%{$qName}%");
-            })
-            ->orderBy('name')
-            ->limit(10)
-            ->get()
-            ->map(fn ($s) => [
-                'id'           => $s->id,
-                'name'         => $s->name,
-                'national_id'  => $s->national_id,
-                'center_name'  => $s->center->name ?? '—',
-                'teacher_name' => $s->teacher->name ?? 'غير محدّد',
-            ]);
-
-        return response()->json(['success' => true, 'data' => $students]);
-    }
-
-    /**
-     * طلبات المحفّظ الحالي (قراءة فقط) — صفحة «طلباتي».
-     */
-    public function index(Request $request)
-    {
-        $requests = StudentRequest::with(['fromCenter', 'fromTeacher', 'targetCenter'])
-            ->where('requested_by', $request->user()->id)
-            ->latest()
-            ->get()
-            ->map(fn ($r) => $this->present($r));
-
-        return response()->json(['success' => true, 'data' => $requests]);
-    }
-
-    // =============================================
-    // مسارات الأدمن — Admin Routes
-    // =============================================
-
-    /**
-     * كل الطلبات للأدمن (افتراضياً المعلّقة؛ ?status=all لكل الحالات).
-     */
-    public function adminIndex(Request $request)
-    {
-        $query = StudentRequest::with([
-            'requestedBy', 'targetCenter', 'targetTeacher', 'fromCenter', 'fromTeacher', 'student',
-        ])->latest();
-
-        $status = $request->get('status', 'pending');
-        if ($status !== 'all') {
-            $query->where('status', $status);
-        }
-
-        $requests = $query->get()->map(fn ($r) => $this->present($r, true));
-
-        return response()->json(['success' => true, 'data' => $requests]);
-    }
-
-    /**
-     * موافقة الأدمن — تُنفّذ التغيير الفعلي على students داخل معاملة:
-     *  - add      → ينشئ الطالب (مع ربط ولي الأمر) بعد إعادة فحص التكرار.
-     *  - transfer → ينقل الطالب (center_id/teacher_id) للوجهة.
-     * يعيد التحقّق من أن محفّظ الوجهة ما زال محفّظاً ضمن مركز الوجهة.
-     */
-    /**
-     * نطاق مدير المركز: يعتمد/يرفض فقط طلبات النقل الداخلية لمركزه
-     * (from = target = مركزه). العابرة للمراكز وطلبات الإضافة تبقى لمدير النظام.
+     * نطاق الاعتماد/الرفض: مدير المركز المستهدف وحده (target_center = مركزه).
+     * الطلبات الصادرة من مركزه إلى غيره، وطلبات المراكز الأخرى → 403.
+     * أي حساب آخر (بما فيه مدير النظام) ليس طرفاً → 403.
      */
     protected function assertManagerScope(Request $request, StudentRequest $req): ?\Illuminate\Http\JsonResponse
     {
         $user = $request->user();
-        if ($user->isCenterManager()) {
-            $c = $user->center_id;
-            if ($req->type !== 'transfer' || (int) $req->from_center_id !== (int) $c || (int) $req->target_center_id !== (int) $c) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'هذا الطلب خارج نطاق مركزك — يعتمده مدير النظام',
-                ], 403);
-            }
+        if (!$user->isCenterManager() || !$user->center_id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'اعتماد الطلبات من صلاحية مدير المركز المستهدف فقط',
+            ], 403);
+        }
+        if ((int) $req->target_center_id !== (int) $user->center_id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'هذا الطلب ليس وارداً إلى مركزك — يعتمده مدير المركز المستهدف',
+            ], 403);
         }
         return null;
     }
 
-    /** طلبات النقل الداخلية لمركز مدير المركز (المعلّقة افتراضياً؛ ?status=all للكل). */
-    public function managerIndex(Request $request)
-    {
-        $c = $request->user()->center_id;
-        $query = StudentRequest::with(['requestedBy', 'targetCenter', 'targetTeacher', 'fromCenter', 'fromTeacher', 'student'])
-            ->where('type', 'transfer')
-            ->where('from_center_id', $c)
-            ->where('target_center_id', $c)
-            ->latest();
-
-        $status = $request->get('status', 'pending');
-        if ($status !== 'all') {
-            $query->where('status', $status);
-        }
-
-        return response()->json([
-            'success' => true,
-            'data' => $query->get()->map(fn ($r) => $this->present($r, true)),
-        ]);
-    }
-
+    /**
+     * موافقة مدير المركز المستهدف — تُنفّذ التغيير الفعلي على students داخل معاملة:
+     *  - add      → ينشئ الطالب (مع ربط ولي الأمر) بعد إعادة فحص التكرار.
+     *  - transfer → ينقل الطالب (center_id/teacher_id) إلى مركزه؛ محفّظ الوجهة اختياري
+     *               (target_teacher_id في الجسم يغلب ما في الطلب) وإلا بقي الطالب بلا محفّظ.
+     * يعيد التحقّق من أن محفّظ الوجهة (إن وُجد) ما زال محفّظاً ضمن مركز الوجهة.
+     */
     public function approve(Request $request, $id)
     {
         $req = StudentRequest::findOrFail($id);
@@ -399,28 +236,42 @@ class StudentRequestController extends Controller
             ], 422);
         }
 
-        // الأمان: محفّظ الوجهة يجب أن يكون محفّظاً ضمن مركز الوجهة (قاعدة «المحفّظ ينتمي للمركز»)
-        $targetTeacher = User::where('id', $req->target_teacher_id)
-            ->where('role', 'teacher')
-            ->where('center_id', $req->target_center_id)
-            ->first();
-        if (!$targetTeacher) {
-            return response()->json([
-                'success' => false,
-                'message' => 'المحفّظ المستهدف لم يعد محفّظاً ضمن المركز المستهدف — لا يمكن تنفيذ الطلب',
-            ], 422);
+        $request->validate(['target_teacher_id' => 'nullable|integer']);
+        $teacherId = $request->filled('target_teacher_id') ? (int) $request->target_teacher_id : $req->target_teacher_id;
+
+        // الأمان: محفّظ الوجهة (إن حُدّد) يجب أن يكون محفّظاً ضمن مركز الوجهة (قاعدة «المحفّظ ينتمي للمركز»)
+        $targetTeacher = null;
+        if ($teacherId) {
+            $targetTeacher = User::where('id', $teacherId)
+                ->where('role', 'teacher')
+                ->where('center_id', $req->target_center_id)
+                ->first();
+            if (!$targetTeacher) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'المحفّظ المستهدف ليس محفّظاً ضمن المركز المستهدف — لا يمكن تنفيذ الطلب',
+                ], 422);
+            }
         }
 
         if ($req->type === 'add') {
+            // صف إضافة قديم (قبل إلغاء طلبات المحفّظ) — يحمل محفّظه دائماً
+            if (!$targetTeacher) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'المحفّظ مقدّم الطلب لم يعد محفّظاً ضمن المركز — لا يمكن تنفيذ الطلب',
+                ], 422);
+            }
+
             // إعادة فحص التكرار بالرقم الوطني (قد يكون أُضيف بين الإرسال والموافقة)
             if ($req->national_id && Student::where('national_id', $req->national_id)->exists()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'أصبح هناك طالب مسجّل بنفس الرقم الوطني. ارفض هذا الطلب واطلب نقلاً بدلاً منه.',
+                    'message' => 'أصبح هناك طالب مسجّل بنفس الرقم الوطني. ارفض هذا الطلب — نقله يكون بطلب من مدير مركزه.',
                 ], 422);
             }
 
-            $student = DB::transaction(function () use ($req) {
+            $student = DB::transaction(function () use ($req, $targetTeacher) {
                 $parentId = $this->resolveParentId($req);
 
                 $student = Student::create([
@@ -431,7 +282,7 @@ class StudentRequestController extends Controller
                     'phone'            => $req->phone,
                     'age'              => $req->age,
                     'center_id'        => $req->target_center_id,
-                    'teacher_id'       => $req->target_teacher_id,
+                    'teacher_id'       => $targetTeacher->id,
                     'parent_id'        => $parentId,
                     'guardian_name'    => $req->guardian_name,
                     'guardian_phone'   => $req->guardian_phone,
@@ -449,7 +300,7 @@ class StudentRequestController extends Controller
                 'تمت الموافقة على طلبك',
                 'تمت الموافقة على طلب إضافة الطالب «' . $req->student_name . '» وإضافته لمركزك.',
                 $req->id,
-                'teacher/requests.html'
+                $this->requesterLink($req)
             );
 
             return response()->json([
@@ -460,7 +311,7 @@ class StudentRequestController extends Controller
         }
 
         // transfer
-        $student = Student::find($req->student_id);
+        $student = Student::with('teacher')->find($req->student_id);
         if (!$student) {
             return response()->json([
                 'success' => false,
@@ -468,26 +319,30 @@ class StudentRequestController extends Controller
             ], 422);
         }
 
-        DB::transaction(function () use ($req, $student) {
+        DB::transaction(function () use ($req, $student, $targetTeacher) {
             $student->update([
                 'center_id'  => $req->target_center_id,
-                'teacher_id' => $req->target_teacher_id,
+                'teacher_id' => $targetTeacher?->id,
+                // بلا محفّظ وجهة: نحفظ اسم محفّظه السابق للعرض («محفّظ سابق: فلان») حتى يُوزَّع
+                'former_teacher_name' => $targetTeacher ? $student->former_teacher_name : ($student->teacher->name ?? $student->former_teacher_name),
             ]);
-            $req->update(['status' => 'approved']);
+            $req->update(['status' => 'approved', 'target_teacher_id' => $targetTeacher?->id]);
         });
 
         InAppNotification::sendSafe(
             $req->requestedBy,
             'request_approved',
             'تمت الموافقة على طلبك',
-            'تمت الموافقة على نقل الطالب «' . $req->student_name . '» إلى مركزك.',
+            'وافق مدير مركز «' . ($req->targetCenter->name ?? '—') . '» على نقل الطالب «' . $req->student_name . '» إليه.',
             $req->id,
-            'teacher/requests.html'
+            $this->requesterLink($req)
         );
 
         return response()->json([
             'success' => true,
-            'message' => 'تمت الموافقة ونقل الطالب بنجاح',
+            'message' => $targetTeacher
+                ? 'تمت الموافقة ونقل الطالب إلى المحفّظ «' . $targetTeacher->name . '»'
+                : 'تمت الموافقة ونقل الطالب إلى مركزك بلا محفّظ — وزّعه من صفحة الطلاب',
             'data'    => $student->load(['center', 'teacher']),
         ]);
     }
@@ -524,7 +379,7 @@ class StudentRequestController extends Controller
         if ($request->filled('admin_note')) {
             $body .= ' السبب: ' . $request->admin_note;
         }
-        InAppNotification::sendSafe($req->requestedBy, 'request_rejected', 'تم رفض طلبك', $body, $req->id, 'teacher/requests.html');
+        InAppNotification::sendSafe($req->requestedBy, 'request_rejected', 'تم رفض طلبك', $body, $req->id, $this->requesterLink($req));
 
         return response()->json([
             'success' => true,
@@ -539,7 +394,7 @@ class StudentRequestController extends Controller
     /**
      * حسم ولي الأمر عند الموافقة — عبر المنطق الموحّد {@see ParentResolver}
      * (هوية → هاتف مطبَّع → بريد؛ إنشاء بكلمة عشوائية؛ فشل واضح 422 بالعربية —
-     * لم يعد فشلاً صامتاً: طلبٌ ببيانات ولي ناقصة يظهر سببه للأدمن ليُكمل أو يرفض).
+     * لم يعد فشلاً صامتاً: طلبٌ ببيانات ولي ناقصة يظهر سببه لمدير المركز ليُكمل أو يرفض).
      */
     protected function resolveParentId(StudentRequest $req): ?int
     {
@@ -559,11 +414,18 @@ class StudentRequestController extends Controller
         return $req->type === 'transfer' ? 'نقل' : 'إضافة';
     }
 
+    /** صفحة النتيجة لصاحب الطلب (مدير مركز → «الطلبات»؛ محفّظ في صف إضافة قديم → «طلابي» — لا صفحة طلبات له). */
+    protected function requesterLink(StudentRequest $req): string
+    {
+        return $req->requestedBy?->isCenterManager() ? 'manager/requests.html' : 'teacher/students.html'; // صف إضافة قديم لمحفّظ: بلا صفحة طلبات — يرى النتيجة في «طلابي»
+    }
+
     /**
      * تحويل الطلب لصيغة عرض موحّدة للواجهة.
-     * @param bool $forAdmin هل نضمّن اسم المحفّظ مقدّم الطلب (لصفحة الأدمن)؟
+     * @param bool     $detailed هل نضمّن مقدّم الطلب ومحفّظ الوجهة (صفحة مدير المركز)؟
+     * @param int|null $centerId مركز المدير — لتحديد اتجاه الطلب (incoming/outgoing) من منظوره.
      */
-    protected function present(StudentRequest $r, bool $forAdmin = false): array
+    protected function present(StudentRequest $r, bool $detailed = false, ?int $centerId = null): array
     {
         $out = [
             'id'             => $r->id,
@@ -578,9 +440,13 @@ class StudentRequestController extends Controller
             'created_at'     => $r->created_at,
         ];
 
-        if ($forAdmin) {
-            $out['requested_by'] = $r->requestedBy->name ?? '—';
-            $out['target_teacher'] = $r->targetTeacher->name ?? '—';
+        if ($detailed) {
+            $out['requested_by']   = $r->requestedBy->name ?? '—';
+            $out['target_teacher'] = $r->targetTeacher->name ?? null;
+            $out['student_id']     = $r->student_id;
+            if ($centerId !== null) {
+                $out['direction'] = (int) $r->target_center_id === (int) $centerId ? 'incoming' : 'outgoing';
+            }
         }
 
         return $out;
