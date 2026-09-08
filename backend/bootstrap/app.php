@@ -19,6 +19,10 @@ return Application::configure(basePath: dirname(__DIR__))
             'manager' => \App\Http\Middleware\CenterManagerMiddleware::class, // مدير المركز
         ]);
     })
+    // أوامر artisan الخاصة بالمشروع — تسجيل صريح (لا نعتمد على الاكتشاف التلقائي)
+    ->withCommands([
+        \App\Console\Commands\MutqinAdminCommand::class,
+    ])
     ->withExceptions(function (Exceptions $exceptions): void {
         //
     })->create();

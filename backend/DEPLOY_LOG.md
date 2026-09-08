@@ -17,6 +17,17 @@
 
 ---
 
+## أمر mutqin:admin — 2026-09-08
+**ما تغيّر:** أمر artisan لإنشاء/إعادة ضبط حساب مدير نظام ببريد صاحب المشروع، يطبع أيضاً SQL جاهزة لـphpMyAdmin (الخادم بلا CLI)
+**الملفات:**
+  - backend/app/Console/Commands/MutqinAdminCommand.php  (added)
+  - backend/bootstrap/app.php  (modified — تسجيل الأمر)
+  - backend/tests/Feature/AdminAccountCommandTest.php  (added)
+  - DEPLOYMENT.md · CLAUDE.md  (modified — توثيق)
+**يحتاج رفع؟** no — أداة محلية؛ لا شيء من هذا يلزم الخادم. **المطلوب على الخادم:** تنفيذ جملة الـSQL التي يطبعها الأمر في phpMyAdmin (قاعدة الإنتاج) لإنشاء حساب الأدمن الشخصي.
+**طريقة الرفع:** sql (لصق جملة الأمر في phpMyAdmin فقط)
+**حالة الرفع:** pending
+
 ## f868880 + fbf2d40 + def7f70 + fbe25fc — 2026-09-07 (الحالة المنشورة الأولية)
 **ما تغيّر:** حزمة تجهيز النشر الأربعة: API_BASE_URL وقت التشغيل (محلي/إنتاج) · تضييق CORS عبر CORS_ALLOWED_ORIGINS بافتراضي مغلق · حجب HTTP عن شجرة لارافيل (backend/.htaccess) مع منح public/ · قالب .env.production.example
 **الملفات:**

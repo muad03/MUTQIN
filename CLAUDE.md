@@ -25,6 +25,7 @@ C:\xampp\php\php.exe artisan db:seed --class=ExtraDataSeeder   # APPENDS extra d
 C:\xampp\php\php.exe artisan test                   # 20 feature-test files (uses the separate `mutqin_test` MySQL DB — phpunit.xml; sqlite won't work: raw MySQL ALTER in one migration)
 C:\xampp\php\php.exe artisan test --filter=SomeTest # single test
 C:\xampp\php\php.exe artisan tinker --execute='...' # quick DB/logic checks (used heavily for verification)
+C:\xampp\php\php.exe artisan mutqin:admin you@mail.com   # create/reset a system-admin account + print ready SQL for the CLI-less host
 ```
 
 Serving the frontend: it is static, so `cd frontend-html && C:\xampp\php\php.exe -S localhost:8080` or Apache at `http://localhost/MUTQENQ/frontend-html/`. The API URL lives in one place — `frontend-html/js/config.js` (`API_BASE_URL`). Auth state is kept in `localStorage` under keys `mutqin_token` / `mutqin_user`.
