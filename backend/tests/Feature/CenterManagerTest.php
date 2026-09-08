@@ -138,7 +138,7 @@ class CenterManagerTest extends TestCase
             'password' => 'secret123', 'password_confirmation' => 'secret123',
             'center_id' => $center->id,
         ])->assertStatus(422)
-          ->assertJsonPath('errors.center_id.0', 'لهذا المركز مدير بالفعل — مدير واحد لكل مركز كحدّ أقصى');
+          ->assertJsonPath('errors.center_id.0', 'لهذا المركز مدير نشط بالفعل — مدير نشط واحد لكل مركز كحدّ أقصى');
     }
 
     public function test_manager_creation_builds_scheme_email_and_requires_password(): void

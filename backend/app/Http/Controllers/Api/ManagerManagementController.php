@@ -15,17 +15,23 @@ use Illuminate\Validation\ValidationException;
  */
 class ManagerManagementController extends Controller
 {
-    /** مدير واحد لكل مركز كحدّ أقصى. */
+    /**
+     * مدير «نشط» واحد لكل مركز كحدّ أقصى — العدّ يستثني المعطَّلين عمداً:
+     * وإلا استحال استبدال مدير مركزٍ نشط (تعيين البديل يُرفض لوجود القديم،
+     * وتعطيل القديم يُرفض لغياب البديل — جمود). مسار الاستبدال الطبيعي:
+     * تعيين البديل أولاً ثم تعطيل القديم.
+     */
     protected function assertSingleSupervisor($centerId, $ignoreId = null): void
     {
         $exists = User::where('role', 'center_manager')
             ->where('center_id', $centerId)
+            ->where('is_active', true)
             ->when($ignoreId, fn ($q) => $q->where('id', '!=', $ignoreId))
             ->exists();
 
         if ($exists) {
             throw ValidationException::withMessages([
-                'center_id' => ['لهذا المركز مدير بالفعل — مدير واحد لكل مركز كحدّ أقصى'],
+                'center_id' => ['لهذا المركز مدير نشط بالفعل — مدير نشط واحد لكل مركز كحدّ أقصى'],
             ]);
         }
     }
