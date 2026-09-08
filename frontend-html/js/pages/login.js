@@ -67,7 +67,9 @@
         alertEl.style.display = 'none';
         UI.setFieldErrors(null);
 
-        const email = document.getElementById('email').value.trim();
+        // إزالة كل المسافات لا الأطراف فقط: كيبورد الهاتف (iOS خاصة) يحشر مسافة
+        // بعد النقطة داخل العنوان فيفشل تحقق الصيغة — والبريد لا يحوي مسافات شرعاً
+        const email = document.getElementById('email').value.replace(/\s+/g, '');
         const password = document.getElementById('password').value;
 
         submit.disabled = true;
