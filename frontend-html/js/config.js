@@ -24,3 +24,21 @@ const STORAGE_TOKEN = 'mutqin_token';
 const STORAGE_USER  = 'mutqin_user';
 
 window.MutqinConfig = { API_BASE_URL, APP_ROOT, STORAGE_TOKEN, STORAGE_USER };
+
+// ===== PWA: يُحقن في كل صفحة (config.js أول ما يُحمَّل) =====
+// «إضافة للشاشة الرئيسية» تفتح الموقع كتطبيق مستقل بلا شريط متصفح،
+// مع لون حالة بلون الهوية — لا service worker (لا عمل دون اتصال بعدُ عمداً).
+(function () {
+    const add = (tag, attrs) => {
+        const el = document.createElement(tag);
+        Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, v));
+        document.head.appendChild(el);
+    };
+    add('link', { rel: 'manifest', href: APP_ROOT + 'manifest.webmanifest' });
+    add('meta', { name: 'theme-color', content: '#04532F' });
+    add('meta', { name: 'mobile-web-app-capable', content: 'yes' });
+    add('meta', { name: 'apple-mobile-web-app-capable', content: 'yes' });
+    add('meta', { name: 'apple-mobile-web-app-status-bar-style', content: 'default' });
+    add('meta', { name: 'apple-mobile-web-app-title', content: 'مُتقِن' });
+    add('link', { rel: 'apple-touch-icon', href: APP_ROOT + 'images/logo.svg' });
+})();

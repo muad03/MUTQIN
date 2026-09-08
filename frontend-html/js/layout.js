@@ -157,8 +157,31 @@
         });
 
         wireNotifications();
+        mountBottomNav(user, active);
 
         return document.getElementById('page-content');
+    }
+
+    // ===== شريط التنقل السفلي (موبايل) — نمط تطبيقات الهاتف =====
+    // أهم 4 وجهات للدور (بترتيب قائمته) + «المزيد» يفتح الدرج الجانبي الكامل.
+    // مخفي كلياً ≥768px عبر CSS، فلا أثر له على سطح المكتب.
+    function mountBottomNav(user, active) {
+        const items = (NAV[user.role] || []).slice(0, 4);
+        if (!items.length) return;
+
+        const nav = document.createElement('nav');
+        nav.className = 'mq-bottomnav';
+        nav.innerHTML = items.map(([key, label, icon, href]) => `
+            <a class="${key === active ? 'active' : ''}" href="${C.APP_ROOT + href}">
+                ${UI.ic(icon, 21)}<span>${label}</span>
+            </a>`).join('') + `
+            <button type="button" id="mq-bn-more">${UI.ic('menu', 21)}<span>المزيد</span></button>`;
+        document.body.appendChild(nav);
+
+        // «المزيد» يفتح نفس درج الموبايل (كل الوجهات + تسجيل الخروج)
+        nav.querySelector('#mq-bn-more').addEventListener('click', () => {
+            document.getElementById('mq-layout')?.classList.add('mq-mobile-open');
+        });
     }
 
     // ===== الإشعارات داخل التطبيق (الجرس + القائمة + الشارة) =====

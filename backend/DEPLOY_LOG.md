@@ -29,6 +29,17 @@
 **طريقة الرفع:** re-zip (الحزمة الكاملة الأولى) + sql (استيراد القاعدة في phpMyAdmin)
 **حالة الرفع:** done
 
+## (hash-pending) — 2026-09-08
+**ما تغيّر:** تجربة موبايل بنمط التطبيقات: شريط تنقل سفلي ثابت لكل دور (+«المزيد» يفتح الدرج) · النماذج صحائف سفلية بعرض كامل · حقول 16px (بلا زوم iOS) وأهداف لمس 44px+ · PWA (manifest + theme-color + إضافة للشاشة الرئيسية كتطبيق مستقل)
+**الملفات:**
+  - css/theme.css  (modified)
+  - js/layout.js  (modified)
+  - js/config.js  (modified)
+  - manifest.webmanifest  (added)
+**يحتاج رفع؟** yes
+**طريقة الرفع:** edit-in-place للثلاثة المعدَّلة (htdocs/css/theme.css و htdocs/js/layout.js و htdocs/js/config.js) + رفع htdocs/manifest.webmanifest الجديد
+**حالة الرفع:** pending
+
 ## de7e38b — 2026-09-08
 **ما تغيّر:** إصلاح دخول الهاتف: كيبورد iOS يحشر مسافة بعد النقطة داخل البريد فيفشل تحقق الصيغة — الآن تُزال كل المسافات من البريد قبل الإرسال، وحقل البريد يعطّل autocapitalize/autocorrect
 **الملفات:**

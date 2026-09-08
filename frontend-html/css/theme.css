@@ -290,6 +290,30 @@ a { text-decoration:none; }
     .mq-act { width:40px; height:40px; }
 }
 
+/* ============================================================
+   شريط التنقل السفلي (موبايل فقط) — نمط تطبيقات الهاتف:
+   أهم 4 وجهات للدور + «المزيد» يفتح الدرج الجانبي الكامل.
+   يحقنه layout.js، ومخفي كلياً من التابلت وسطح المكتب.
+   ============================================================ */
+.mq-bottomnav { display:none; }
+@keyframes mq-sheet-up { from { transform:translateY(26px); opacity:.55; } to { transform:none; opacity:1; } }
+@media (max-width:767.98px){
+    .mq-bottomnav {
+        display:flex; position:fixed; right:0; left:0; bottom:0; z-index:98;
+        background:#fff; border-top:1px solid rgba(4,83,47,.14);
+        box-shadow:0 -10px 30px -18px rgba(4,54,31,.35);
+        padding:6px 4px calc(6px + env(safe-area-inset-bottom, 0px));
+    }
+    .mq-bottomnav a, .mq-bottomnav button {
+        flex:1; display:flex; flex-direction:column; align-items:center; gap:3px;
+        background:none; border:none; cursor:pointer; text-decoration:none;
+        color:#7A8F82; font-family:'Cairo',sans-serif; font-size:10.5px; font-weight:700;
+        padding:6px 2px; border-radius:12px; min-height:48px; /* هدف لمس مريح */
+    }
+    .mq-bottomnav .active { color:#04532F; background:rgba(4,83,47,.09); }
+    .mq-bottomnav svg { flex:none; }
+}
+
 /* موبايل: الشريط الجانبي درج منزلق (off-canvas) يفتحه زر ☰ وتُغلقه الخلفية المعتمة */
 @media (max-width:767.98px){
     .mq-sidebar { transform:translateX(100%); width:min(290px,84vw);
@@ -301,15 +325,35 @@ a { text-decoration:none; }
     .mq-topbar-actions { gap:10px; }
     .mq-date { display:none; }
     .mq-page-title { font-size:20px; }
-    .mq-content { padding:18px 14px 50px; }
+    /* مساحة سفلية لشريط التنقل الثابت حتى لا يغطي آخر المحتوى */
+    .mq-content { padding:18px 14px calc(84px + env(safe-area-inset-bottom, 0px)); }
     .mq-quick-grid { grid-template-columns:1fr; }
     .mq-table th, .mq-table td { padding:12px 14px; }
 
-    /* النوافذ المنبثقة: عرض شبه كامل بهوامش صغيرة (تجاوز أنماط inline)
+    /* ===== نمط التطبيق: النوافذ تصير «صحائف سفلية» (bottom sheets) =====
+       تنزلق من الأسفل بعرض كامل وزوايا علوية مستديرة — كما في تطبيقات الهاتف.
        الصيغتان مطلوبتان: HTML الثابت بلا مسافات، وcssText يُسلسَل بمسافات */
     div[style*="position:fixed"][style*="inset:0"],
-    div[style*="position: fixed"][style*="inset: 0"] { padding:12px !important; }
-    .mq-card[style*="max-width"] { max-width:calc(100vw - 24px) !important; }
+    div[style*="position: fixed"][style*="inset: 0"] {
+        padding:0 !important;
+        align-items:flex-end !important;
+    }
+    div[style*="position:fixed"][style*="inset:0"] > .mq-card,
+    div[style*="position: fixed"][style*="inset: 0"] > .mq-card {
+        max-width:100% !important; width:100%; margin:0 !important;
+        border-radius:22px 22px 0 0 !important;
+        max-height:90vh !important;
+        padding-bottom:env(safe-area-inset-bottom, 0px);
+        animation:mq-sheet-up .22s ease-out;
+    }
+    .mq-card[style*="max-width"] { max-width:100% !important; }
+
+    /* ===== حقول ولمسات بمقاس الإبهام =====
+       16px تمنع iOS من الزوم التلقائي عند التركيز على الحقل */
+    .mq-input, select.mq-input, textarea.mq-input { font-size:16px; min-height:46px; }
+    textarea.mq-input { min-height:72px; }
+    .mq-btn { min-height:44px; }
+    .mq-btn--sm { min-height:40px; }
     /* الحقول المتجاورة داخل البطاقات والنماذج تتكدّس عمودياً */
     .mq-card [style*="grid-template-columns"] { grid-template-columns:1fr !important; }
     /* ارتفاعات الأزرار ثابتة ≥40px من منظومة الأزرار — لا حاجة لقاعدة لمس هنا */

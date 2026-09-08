@@ -1,0 +1,21 @@
+{
+  "name": "مُتقِن — إدارة مراكز التحفيظ",
+  "short_name": "مُتقِن",
+  "description": "منصة لإدارة مراكز تحفيظ القرآن الكريم في ليبيا",
+  "lang": "ar",
+  "dir": "rtl",
+  "start_url": "./login.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F1EEE3",
+  "theme_color": "#04532F",
+  "icons": [
+    {
+      "src": "images/logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
