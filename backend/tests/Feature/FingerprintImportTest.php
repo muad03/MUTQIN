@@ -19,10 +19,11 @@ class FingerprintImportTest extends TestCase
 {
     use RefreshDatabase, CreatesCoreData;
 
-    /** يبني ملف xlsx بصمة مؤقتاً بالترويسة المعتمدة ويعيده كملف مرفوع. */
-    private function xlsx(array $dataRows): UploadedFile
+    /** يبني ملف xlsx بصمة مؤقتاً بالترويسة المعتمدة (أو ترويسة مخصّصة) ويعيده كملف مرفوع. */
+    private function xlsx(array $dataRows, ?array $header = null): UploadedFile
     {
-        $rows = array_merge([['رقم الطالب', 'الاسم', 'التاريخ', 'الوقت', 'الحالة']], $dataRows);
+        $header ??= ['رقم الطالب', 'الاسم', 'التاريخ', 'الوقت', 'الحالة'];
+        $rows = array_merge([$header], $dataRows);
         $ss = new Spreadsheet();
         $ws = $ss->getActiveSheet();
         foreach ($rows as $i => $r) {
@@ -145,5 +146,50 @@ class FingerprintImportTest extends TestCase
         $this->assertSame(1, $r->json('skipped'));
         $this->assertStringContainsString('خارج نطاق صلاحيتك', $r->json('errors.0.reason'));
         $this->assertSame(0, Attendance::count()); // لا سجل ولا غياب محتسب لطالب المركز الآخر
+    }
+
+    /** ملف الجهاز الخام بأربعة أعمدة (بلا «الحالة»): كل صف ظاهر = حاضر، والغياب يُحتسب للنشطين الغائبين عن الملف. */
+    public function test_four_column_device_file_marks_rows_present_and_computes_absences(): void
+    {
+        $teacher  = $this->makeTeacher();
+        $s1       = $this->makeStudent($teacher);                          // S1 — في الملف
+        $s2       = $this->makeStudent($teacher);                          // S2 — في الملف
+        $s3       = $this->makeStudent($teacher);                          // S3 — نشط وغير ظاهر → غائب محتسب
+        $inactive = $this->makeStudent($teacher, null, ['is_active' => false]); // S4 — موقوف → لا يُمسّ
+        $token    = $this->loginToken($teacher);
+
+        $r = $this->import($token, $this->xlsx([
+            ['1',  $s1->name, '2026-07-15', '07:00'],
+            ['S2', $s2->name, '2026-07-15', '07:05'],
+        ], ['رقم الطالب', 'الاسم', 'التاريخ', 'الوقت']))->assertOk();
+
+        $this->assertSame(2, $r->json('imported'));
+        $this->assertSame(2, $r->json('present'));
+        $this->assertSame(0, $r->json('late'));
+        $this->assertSame(1, $r->json('absent_computed'));
+        $this->assertSame(0, $r->json('skipped'));
+
+        $this->assertSame('present', Attendance::where('student_id', $s1->id)->where('date', '2026-07-15')->value('status'));
+        $this->assertSame('present', Attendance::where('student_id', $s2->id)->where('date', '2026-07-15')->value('status'));
+        $this->assertSame('absent',  Attendance::where('student_id', $s3->id)->where('date', '2026-07-15')->value('status'));
+        $this->assertSame(0, Attendance::where('student_id', $inactive->id)->count());
+        $this->assertSame(3, Attendance::count());
+    }
+
+    /** أربعة أعمدة برؤوس خاطئة: يُرفض بالرسالة العربية نفسها ولا يُكتب شيء. */
+    public function test_four_column_file_with_wrong_headers_is_rejected_in_arabic(): void
+    {
+        $teacher = $this->makeTeacher();
+        $student = $this->makeStudent($teacher); // S1
+        $token   = $this->loginToken($teacher);
+
+        $r = $this->import($token, $this->xlsx([
+            ['1', $student->name, '2026-07-15', '07:00'],
+        ], ['رقم الطالب', 'الاسم', 'التاريخ', 'زمن']));
+
+        $r->assertStatus(422);
+        $this->assertFalse($r->json('success'));
+        $this->assertStringContainsString('ترويسة ملف Excel غير مطابقة', $r->json('message'));
+        $this->assertSame(0, Attendance::count());
     }
 }
