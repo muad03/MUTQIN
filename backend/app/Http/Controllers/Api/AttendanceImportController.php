@@ -50,13 +50,22 @@ class AttendanceImportController extends Controller
 
         // 3. التحقق من أعمدة الترويسة (Header) باللغة العربية
         $header = array_shift($rows);
+        $h = fn (int $i) => trim((string) ($header[$i] ?? ''));
 
-        if (!$header || count($header) < 5 ||
-            trim($header[0] ?? '') !== 'رقم الطالب' ||
-            trim($header[1] ?? '') !== 'الاسم' ||
-            trim($header[2] ?? '') !== 'التاريخ' ||
-            trim($header[3] ?? '') !== 'الوقت' ||
-            trim($header[4] ?? '') !== 'الحالة') {
+        // عمود «الحالة» اختياري: ملف تصدير جهاز البصمة يأتي بأربعة أعمدة فقط
+        // (رقم الطالب | الاسم | التاريخ | الوقت) — عندها كل صف ظاهر = حاضر،
+        // والغياب يُحتسب تلقائياً كالمعتاد. الشكلان المقبولان حصراً:
+        //   4 أعمدة: الرؤوس الأربعة مطابقة ولا عمود خامس.
+        //   5 أعمدة: الرؤوس الخمسة مطابقة (السلوك الأصلي بلا تغيير).
+        $firstFourOk = $header
+            && $h(0) === 'رقم الطالب'
+            && $h(1) === 'الاسم'
+            && $h(2) === 'التاريخ'
+            && $h(3) === 'الوقت';
+        $hasStatusColumn = $firstFourOk && $h(4) === 'الحالة';
+        $fourColumnsOnly = $firstFourOk && $h(4) === '';
+
+        if (!$hasStatusColumn && !$fourColumnsOnly) {
             return response()->json([
                 'success' => false,
                 'message' => 'عفواً، ترويسة ملف Excel غير مطابقة للمواصفات المطلوبة. يجب أن تكون الأعمدة بالترتيب: رقم الطالب | الاسم | التاريخ | الوقت | الحالة.',
@@ -86,7 +95,7 @@ class AttendanceImportController extends Controller
         // 4+5. المعالجة كلها (صفوف الملف + الغياب المحتسب) داخل transaction
         // واحدة: فشل جزئي في المنتصف لا يترك حضور يومٍ نصف مكتوب.
         \Illuminate\Support\Facades\DB::transaction(function () use (
-            $rows, $user,
+            $rows, $user, $hasStatusColumn,
             &$imported, &$importedNew, &$updated, &$skipped, &$errors, &$nameWarnings,
             &$present, &$late, &$absentFromFile, &$absentComputed, &$ignoredOther,
             &$datesInFile, &$seenByDate, &$centerIds
@@ -108,7 +117,7 @@ class AttendanceImportController extends Controller
                 continue;
             }
 
-            if (count($row) < 5) {
+            if (count($row) < ($hasStatusColumn ? 5 : 4)) {
                 $skipped++;
                 $errors[] = [
                     'row' => $rowNum,
@@ -122,7 +131,7 @@ class AttendanceImportController extends Controller
             $studentName  = trim($row[1] ?? '');
             $dateRaw      = $row[2];
             $timeRaw      = $row[3];
-            $statusRaw    = trim($row[4] ?? '');
+            $statusRaw    = $hasStatusColumn ? trim($row[4] ?? '') : null;
 
             // 1. التحقق من وجود رقم الطالب
             if (empty($studentIdRaw)) {
@@ -249,23 +258,28 @@ class AttendanceImportController extends Controller
             }
 
             // 5. تحليل ومعالجة الحالة وترجمتها
-            $statusMap = [
-                'حاضر'   => 'present',
-                'غائب'   => 'absent',
-                'متأخر'  => 'late',
-            ];
-
-            if (!isset($statusMap[$statusRaw])) {
-                $skipped++;
-                $errors[] = [
-                    'row' => $rowNum,
-                    'number' => $deviceNum, 'name' => $studentName,
-                    'reason' => "الحالة غير معروفة: '{$statusRaw}' (المقبول: حاضر، غائب، متأخر).",
+            if ($hasStatusColumn) {
+                $statusMap = [
+                    'حاضر'   => 'present',
+                    'غائب'   => 'absent',
+                    'متأخر'  => 'late',
                 ];
-                continue;
-            }
 
-            $status = $statusMap[$statusRaw];
+                if (!isset($statusMap[$statusRaw])) {
+                    $skipped++;
+                    $errors[] = [
+                        'row' => $rowNum,
+                        'number' => $deviceNum, 'name' => $studentName,
+                        'reason' => "الحالة غير معروفة: '{$statusRaw}' (المقبول: حاضر، غائب، متأخر).",
+                    ];
+                    continue;
+                }
+
+                $status = $statusMap[$statusRaw];
+            } else {
+                // ملف الجهاز بلا عمود حالة: الظهور في الملف = حضور
+                $status = 'present';
+            }
 
             // 5.ب تحقق الاسم — «أداة كشف خطأ، لا أداة مطابقة»: الرقم هو أساس
             // المطابقة الوحيد، والصف يُستورد على كل حال. اختلاف الاسم (بعد
