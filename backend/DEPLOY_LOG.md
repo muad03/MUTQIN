@@ -36,6 +36,15 @@
 **طريقة الرفع:** re-zip (الحزمة الكاملة الأولى) + sql (استيراد القاعدة في phpMyAdmin)
 **حالة الرفع:** done
 
+## 5f2dd70 + e77d25c — 2026-09-09
+**ما تغيّر:** استيراد الحضور يقبل ملف جهاز البصمة الخام بأربعة أعمدة (رقم الطالب | الاسم | التاريخ | الوقت) — كل صف ظاهر = حاضر، والغياب يُحتسب تلقائياً كالمعتاد؛ ملف الخمسة أعمدة بلا تغيير · اختباران جديدان للملف رباعي الأعمدة (119 اختباراً خضراء)
+**الملفات:**
+  - backend/app/Http/Controllers/Api/AttendanceImportController.php  (modified)
+  - backend/tests/Feature/FingerprintImportTest.php  (modified — لا يلزم الخادم)
+**يحتاج رفع؟** yes (ملف المتحكم فقط)
+**طريقة الرفع:** edit-in-place — لصق public_html/backend/app/Http/Controllers/Api/AttendanceImportController.php عبر File Manager Edit (لا هجرات ولا مفاتيح .env)
+**حالة الرفع:** pending
+
 ## fa75475 — 2026-09-08
 **ما تغيّر:** تحديث سجل النشر بحقائق الانتقال إلى Libyan Spider (cPanel، mutqin.ly، public_html، القاعدة mutqinly_mutqin، SSH معطَّل من المستضيف) واستبدال كل ذكر لـInfinityFree/htdocs
 **الملفات:**
