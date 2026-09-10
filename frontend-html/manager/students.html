@@ -40,7 +40,7 @@
           </div>
         </div>
         <div class="mq-card"><table class="mq-table" id="tbl">
-          <thead><tr><th>الطالب</th><th style="width:80px;">الكود</th><th>الرقم الوطني</th><th>المحفّظ</th><th>العمر</th><th style="width:100px;text-align:center;">الحالة</th><th style="width:80px;">الإجراءات</th></tr></thead>
+          <thead><tr><th>الطالب</th><th style="width:80px;">الكود</th><th>الرقم الوطني</th><th>المحفّظ</th><th>العمر</th><th style="width:100px;text-align:center;">الحالة</th><th style="width:110px;">الإجراءات</th></tr></thead>
           <tbody id="stu-body"><tr><td colspan="7" style="text-align:center;color:#7A8F82;padding:30px;">جارٍ التحميل...</td></tr></tbody>
         </table></div>
         <div style="text-align:center;margin-top:16px;">
@@ -53,10 +53,34 @@
     const statusFilter = document.getElementById('status-filter');
     let page = 1, lastPage = 1, total = 0, loadedCount = 0, fetchSeq = 0;
 
+    // تغيير محفّظ الطالب أو فكّ إسناده — الفحص الحاسم في الخادم (مركز المدير + محفّظ نشط من مركزه)
+    function openChangeTeacher(s) {
+        const current = s.teacher ? s.teacher.name : (s.former_teacher_name ? `محفّظ سابق: ${s.former_teacher_name}` : 'بدون محفّظ');
+        const options = [{ value: '', label: '— بدون محفّظ —' }].concat(
+            teachers.filter(t => t.is_active).map(t => ({ value: t.id, label: t.name })));
+        UI.formModal({
+            title: `تغيير محفّظ الطالب «${s.name}»`,
+            submitText: 'حفظ',
+            fields: [{
+                name: 'teacher_id', label: 'المحفّظ الجديد', type: 'select', options,
+                value: s.teacher_id ?? '',
+                help: `الحالي: ${UI.escapeHtml(current)} · «بدون محفّظ» يفكّ الإسناد ولا يُسند لأحد تلقائياً.`,
+            }],
+            onSubmit: async (v, { close }) => {
+                const res = await API.put('/manager/students/' + s.id + '/teacher', { teacher_id: v.teacher_id ? +v.teacher_id : null });
+                UI.toast(res.message || 'تم تحديث المحفّظ');
+                close();
+                render(true);
+            },
+        });
+    }
+
     // إيقاف/تفعيل الطالب — بديل الحذف (نفس نمط صفحة طلاب مدير النظام)
     function bindRowActions(batch) {
         const body = document.getElementById('stu-body');
         batch.forEach(s => {
+            const ct = body.querySelector(`[data-teacher="${s.id}"]`);
+            if (ct) ct.onclick = () => openChangeTeacher(s);
             const tb = body.querySelector(`[data-toggle="${s.id}"]`);
             if (tb) tb.onclick = async () => {
                 const deact = !!s.is_active;
@@ -115,6 +139,9 @@
                       ? UI.badge('نشط', 'success')
                       : UI.badge('موقوف', 'danger')}</td>
                   <td><div class="mq-actions">
+                    <button class="mq-btn mq-btn--quiet mq-btn--icon mq-btn--sm" data-teacher="${s.id}" title="تغيير المحفّظ">
+                      ${UI.ic('teachers', 17)}
+                    </button>
                     <button class="mq-btn ${s.is_active ? 'mq-btn--quiet-danger' : 'mq-btn--quiet'} mq-btn--icon mq-btn--sm"
                             data-toggle="${s.id}" title="${s.is_active ? 'إيقاف الطالب' : 'تفعيل الطالب'}">
                       ${s.is_active
