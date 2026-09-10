@@ -176,6 +176,14 @@ class StudentController extends Controller
         $natType  = $request->input('nationality_type', 'libyan');
         $gNatType = $request->input('guardian_nationality_type', 'libyan');
 
+        // هل سيُنشأ ولي أمر جديد؟ (لا ربط بموجود، وبيانات ولي واردة) → كلمة المرور
+        // إلزامية للجميع (لا توليد صامت)، والهاتف إلزامي في مسار مدير المركز.
+        $linksExisting = $request->filled('parent_id') || $request->filled('parent_id_number');
+        $creatingGuardian = !$linksExisting && (
+            $request->filled('guardian_name') || $request->filled('guardian_phone')
+            || $request->filled('guardian_email') || $request->filled('guardian_id_number')
+        );
+
         $request->validate([
             'name'              => 'required|string|max:255',
             'nationality_type'  => 'nullable|in:libyan,foreigner',
@@ -188,9 +196,12 @@ class StudentController extends Controller
             'age'               => 'nullable|integer|between:1,120',
             // ولي أمر موجود (الوضع B): يجب أن يكون مستخدماً بدور parent
             'parent_id'         => ['nullable', \Illuminate\Validation\Rule::exists('users', 'id')->where('role', 'parent')],
+            // ولي أمر موجود بالرقم الوطني (مسار مدير المركز) — يجب أن يكون parent فعلياً
+            'parent_id_number'  => ['nullable', 'string', 'max:32', \Illuminate\Validation\Rule::exists('users', 'id_number')->where('role', 'parent')],
             'guardian_name'     => 'nullable|string|max:255',
             'guardian_email'    => 'nullable|email|max:255',
-            'guardian_phone'    => 'nullable|string|max:20',
+            'guardian_phone'    => [($creatingGuardian && $user->isCenterManager()) ? 'required' : 'nullable', 'string', 'max:20'],
+            // كلمة المرور لا تُفرض هنا: قد يُطابَق ولي موجود بالهاتف/الهوية بلا إنشاء — ParentResolver يرفض 422 عند الإنشاء الفعلي بلا كلمة مرور
             'guardian_password' => 'nullable|string|min:6',
             'guardian_nationality_type' => 'nullable|in:libyan,foreigner',
             'guardian_nationality_name' => 'required_if:guardian_nationality_type,foreigner|nullable|string|max:100',
@@ -200,19 +211,24 @@ class StudentController extends Controller
             'center_id.required'      => 'يجب اختيار المركز',
             'teacher_id.exists'       => 'المعلّم المختار غير صالح أو لا ينتمي للمركز المختار',
             'parent_id.exists'        => 'ولي الأمر المختار غير صالح',
+            'parent_id_number.exists' => 'لا يوجد ولي أمر مسجّل بهذا الرقم الوطني',
             'guardian_email.email'    => 'بريد ولي الأمر غير صحيح',
+            'guardian_phone.required' => 'هاتف ولي الأمر مطلوب',
+            'guardian_password.required' => 'كلمة مرور ولي الأمر مطلوبة',
             'guardian_password.min'   => 'كلمة مرور ولي الأمر يجب أن تكون 6 أحرف على الأقل',
         ], $this->nationalIdMessages()));
 
         // ترتيب حسم ولي الأمر:
-        //  (B) parent_id موجود → ربط مباشر بحساب موجود، بلا إنشاء حساب جديد.
+        //  (B) parent_id أو parent_id_number → ربط مباشر بحساب موجود، بلا إنشاء حساب جديد.
         //  (A) بيانات ولي → المنطق الموحّد ParentResolver (هوية → هاتف مطبَّع → بريد، وإلا إنشاء).
         //  (C) لا شيء → null.
         // transaction: إنشاء ولي الأمر + الطالب + حجز كود العرض (S..) تنجح كلها أو تُلغى معاً
         $student = \Illuminate\Support\Facades\DB::transaction(function () use ($request, $natType, $gNatType) {
             $parentId = $request->filled('parent_id')
                 ? (int) $request->parent_id
-                : ParentResolver::resolve([
+                : ($request->filled('parent_id_number')
+                    ? User::where('role', 'parent')->where('id_number', $request->parent_id_number)->value('id')
+                    : ParentResolver::resolve([
                     'name'             => $request->guardian_name,
                     'email'            => $request->guardian_email,
                     'phone'            => $request->guardian_phone,
@@ -220,7 +236,7 @@ class StudentController extends Controller
                     'nationality_type' => $gNatType,
                     'nationality_name' => $request->guardian_nationality_name,
                     'id_number'        => $request->guardian_id_number,
-                ])?->id;
+                ])?->id);
 
             return Student::create([
                 'name'             => $request->name,

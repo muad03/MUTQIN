@@ -39,6 +39,7 @@ class PhoneNormalizationTest extends TestCase
             'guardian_name'  => 'ولي التطبيع',
             'guardian_phone' => '0926010203',
             'guardian_email' => 'normalize.parent@test.ly',
+            'guardian_password' => 'secret123', // إلزامية عند إنشاء ولي أمر جديد (لا توليد صامت)
         ]);
         $r1->assertStatus(201);
         $p1 = $r1->json('data.parent_id');
