@@ -14,7 +14,7 @@ use Illuminate\Support\Str;
 
 /**
  * البذر الليبي الشامل — يستبدل بيانات الديمو القديمة بالكامل ببيانات توليدية
- * ليبية تغطي كل حقل يقبل بيانات (4 مراكز، 14 محفّظاً، 130 طالباً، ~70 ولي أمر،
+ * ليبية تغطي كل حقل يقبل بيانات (مركز واحد، 5 محفّظين، 50 طالباً، 26 ولي أمر،
  * حضور 8 أسابيع، حفظ وختمات حسابية، اختبارات، طلبات نقل، رسائل، إشعارات).
  *
  * قواعد حاكمة (لا تُخالَف):
@@ -51,7 +51,7 @@ class LibyanDataSeeder extends Seeder
     // ما تُنشئه المراحل ويحتاجه اللاحق منها (داخل نفس التشغيلة)
     private ?User $admin = null;
     /** @var Center[] */
-    private array $centers = [];            // بالترتيب: بلال بن رباح، الفويهات، القوارشة، المرج
+    private array $centers = [];            // مركز واحد: بلال بن رباح (قرار معتمد: ديمو بمركز واحد و50 طالباً)
     /** @var array<int, User[]> مفهرسة بمعرّف المركز */
     private array $teachersByCenter = [];
     /** @var User[] المدراء النشطون مفهرسون بمعرّف المركز */
@@ -130,7 +130,7 @@ class LibyanDataSeeder extends Seeder
     // المراحل — تُملأ تباعاً (كل مرحلة commit مستقل بموافقة صريحة)
     // ============================================================
 
-    /** المرحلة 2 — الأدمن + المراكز الأربعة + 14 محفّظاً + 4 مدراء مراكز. */
+    /** المرحلة 2 — الأدمن + مركز واحد + 5 محفّظين + مدير نشط (وآخر معطَّل). */
     private function seedCentersAndStaff(): void
     {
         // 1) مدير النظام — اسم ليبي جديد، والبريد اصطلاح ثابت admin@mutqin.ly (بلا كود عرض)
@@ -142,12 +142,9 @@ class LibyanDataSeeder extends Seeder
             'password' => Hash::make(self::ADMIN_PASSWORD),
         ]);
 
-        // 2) المراكز الأربعة — display_code (C{n}) يحجزه خطاف Center::creating ذرّياً
+        // 2) المركز الواحد — display_code (C{n}) يحجزه خطاف Center::creating ذرّياً
         $centersData = [
-            ['مركز بلال بن رباح لتحفيظ القرآن', 'بنغازي', 'شارع الببسي', 5], // الرئيسي — الأكبر
-            ['مركز الإمام نافع لتحفيظ القرآن',  'بنغازي', 'الفويهات',    4],
-            ['مركز الفرقان لتحفيظ القرآن',      'بنغازي', 'القوارشة',    3],
-            ['مركز المرج لتحفيظ القرآن',        'المرج',  'وسط المدينة', 2], // بلا مدير — fallback الأدمن
+            ['مركز بلال بن رباح لتحفيظ القرآن', 'بنغازي', 'شارع الببسي', 5],
         ];
         $teacherCounts = [];
         foreach ($centersData as [$name, $city, $address, $tCount]) {
@@ -161,7 +158,7 @@ class LibyanDataSeeder extends Seeder
             $teacherCounts[$c->id] = $tCount;
         }
 
-        // 3) المحفّظون الـ14 — أسماء ثلاثية حتمية (لا عشوائية في الهوية)،
+        // 3) المحفّظون الـ5 — أسماء ثلاثية حتمية (لا عشوائية في الهوية)،
         //    «محفظ أساسي» واحد بالضبط لكل مركز (الأول فيه) والبقية معاونون
         $males    = array_keys(LibyanNames::MALE);
         $families = array_keys(LibyanNames::FAMILIES);
@@ -186,12 +183,9 @@ class LibyanDataSeeder extends Seeder
             }
         }
 
-        // 4) مدراء المراكز — نشط لكل مركز من الثلاثة الأولى (المرج بلا مدير عمداً)،
-        //    بريدهم {نقحرة}.centeradmin@mutqin.ly بلا لاحقة id (اصطلاح النظام)
+        // 4) مدير المركز النشط — بريده {نقحرة}.centeradmin@mutqin.ly بلا لاحقة id (اصطلاح النظام)
         $managersData = [
             ['عبدالسلام خالد المسماري', 'abdulsalam.almismari', 0],
-            ['الصادق جمعة الترهوني',    'alsadiq.altarhuni',    1],
-            ['مفتاح إدريس العواكلي',    'muftah.alawakli',      2],
         ];
         foreach ($managersData as [$name, $latin, $centerIdx]) {
             $m = User::create([
@@ -205,7 +199,7 @@ class LibyanDataSeeder extends Seeder
             $this->managersByCenter[$m->center_id] = $m;
         }
 
-        // مدير رابع معطَّل بجانب المدير النشط لمركز بلال بن رباح — يثبت أن
+        // مدير ثانٍ معطَّل بجانب المدير النشط — يثبت أن
         // التعطيل لا يترك المركز مكشوفاً (القاعدة «مدير واحد» تخص النشطين عملياً)
         User::create([
             'name'              => 'ميلود عمران الدرسي',
@@ -219,17 +213,17 @@ class LibyanDataSeeder extends Seeder
             'status_changed_at' => now()->subWeeks(3),
         ]);
 
-        $this->command->info('✓ المرحلة 2: أدمن + 4 مراكز + 14 محفّظاً (أساسي واحد/مركز) + 4 مدراء (أحدهم معطَّل، والمرج بلا مدير)');
+        $this->command->info('✓ المرحلة 2: أدمن + مركز واحد + 5 محفّظين (أساسي واحد) + مديران (أحدهما معطَّل)');
     }
 
     /**
-     * المرحلة 3 — 70 ولي أمر + 130 طالباً:
-     *  - أسر حتمية (لا عشوائية في الهوية): 30 أسرة بابن واحد + 25 باثنين +
-     *    10 بثلاثة + 5 بأربعة = 130 ابناً، الإخوة بنفس العائلة والمركز
+     * المرحلة 3 — 26 ولي أمر + 50 طالباً:
+     *  - أسر حتمية (لا عشوائية في الهوية): 10 أسر بابن واحد + 10 باثنين +
+     *    4 بثلاثة + 2 بأربعة = 50 ابناً، الإخوة بنفس العائلة والمركز
      *    وولي أمر واحد (منطق ParentResolver: هوية → هاتف → بريد — كلها فريدة).
-     *  - التوزيع على المراكز بحصص 45/35/30/20 حسب الحجم.
-     *  - ~70% برقم وطني (1 ذكر / 2 أنثى) و~30% بدونه، و5 طلاب أجانب بأسماء
-     *    جنسياتهم، و10 بلا محفّظ (4/3/2/1) بحقل former_teacher_name مملوءاً.
+     *  - كل الطلاب في المركز الواحد (حصة 50).
+     *  - ~70% برقم وطني (1 ذكر / 2 أنثى) و~30% بدونه، وأسرتان أجنبيتان بأسماء
+     *    جنسياتهما، و4 بلا محفّظ بحقل former_teacher_name مملوءاً.
      *  - كل الحقول الاختيارية تُملأ في أغلب الصفوف (هاتف، عمر، ميلاد، ولي…).
      */
     private function seedFamilies(): void
@@ -240,21 +234,21 @@ class LibyanDataSeeder extends Seeder
 
         // حصص المراكز (بترتيب إنشائها) وعدّاد ما تبقّى منها
         $quota = [];
-        foreach ([45, 35, 30, 20] as $idx => $q) {
+        foreach ([50] as $idx => $q) {
             $quota[$this->centers[$idx]->id] = $q;
         }
-        // «بلا محفّظ» لكل مركز: 4/3/2/1 — يُقتطعون من آخر طلاب كل مركز
+        // «بلا محفّظ»: 4 — يُقتطعون من آخر طلاب المركز
         $noTeacherQuota = [];
-        foreach ([4, 3, 2, 1] as $idx => $q) {
+        foreach ([4] as $idx => $q) {
             $noTeacherQuota[$this->centers[$idx]->id] = $q;
         }
         // محفّظون سابقون (أسماء عرضية لحقل former_teacher_name)
         $formerTeachers = ['الشيخ عبدالله سالم الزوي', 'الشيخ رمضان علي الشلوي', 'الشيخ سليمان أحمد الجازوي'];
 
-        // بنية الأسر: 5×4 + 10×3 + 25×2 + 30×1 = 130 ابناً لـ70 أسرة —
+        // بنية الأسر: 2×4 + 4×3 + 10×2 + 10×1 = 50 ابناً لـ26 أسرة —
         // الأكبر أولاً (first-fit decreasing): الأسر الكبيرة تحجز أولاً
         // وأسر الابن الواحد تسدّ بقايا الحصص، فلا يتبقى فراغ لا يتّسع
-        $familySizes = array_merge(array_fill(0, 5, 4), array_fill(0, 10, 3), array_fill(0, 25, 2), array_fill(0, 30, 1));
+        $familySizes = array_merge(array_fill(0, 2, 4), array_fill(0, 4, 3), array_fill(0, 10, 2), array_fill(0, 10, 1));
 
         $centerIds     = array_keys($quota);
         $centerTotals  = $quota;             // الحصة الكاملة الثابتة لكل مركز
@@ -283,7 +277,7 @@ class LibyanDataSeeder extends Seeder
             $motherled   = ($f % 8) === 7;
             $guardFirst  = $motherled ? $females[$f % count($females)] : $fatherFirst;
             $guardName   = "{$guardFirst} {$family}";
-            $foreignFam  = ($f % 14) === 6; // ~5 أسر أجنبية
+            $foreignFam  = ($f % 14) === 6; // أسرتان أجنبيتان (f=6, 20)
 
             // ولي الأمر: هوية (id_number) لـ~80% + هاتف فريد + بريد فريد — أعمدة
             // منطق ParentResolver الثلاثة، وبلا display_code (بتصميم مقصود)
@@ -309,7 +303,7 @@ class LibyanDataSeeder extends Seeder
                 $first  = $female ? $females[($i * 7) % count($females)] : $males[($i * 11) % count($males)];
                 $name   = "{$first} {$fatherFirst} {$family}";
 
-                // 10 بلا محفّظ (4/3/2/1): الأواخر N من حصة كل مركز — موضع الطالب
+                // 4 بلا محفّظ: الأواخر N من حصة المركز — موضع الطالب
                 // داخل مركزه يحسم الأمر حتمياً، بمحفّظ سابق مذكور للعرض
                 $pos = $assignedCount[$centerId] = ($assignedCount[$centerId] ?? -1) + 1;
                 $noTeacher = $pos >= $centerTotals[$centerId] - $noTeacherQuota[$centerId];
@@ -448,11 +442,11 @@ class LibyanDataSeeder extends Seeder
         $reversed = array_reverse(array_keys(\App\Support\SurahReference::SURAHS)); // 114
         $surahJuz = \App\Support\SurahReference::SURAHS;
 
-        // 4 ختمات: طلاب نشطون بمحفّظين من مراكز مختلفة (مواضع حتمية)
+        // 4 ختمات: طلاب نشطون بمحفّظين مختلفين (مواضع حتمية ضمن الـ46 ذوي المحفّظ)
         $khatmaIds = collect($this->students)
             ->filter(fn ($s) => $s->teacher_id !== null)
             ->values()
-            ->only([2, 38, 72, 105])
+            ->only([2, 14, 27, 41])
             ->pluck('id')
             ->all();
         $this->khatmaStudentIds = $khatmaIds; // المرحلة 7 تستثنيهم من الإيقاف
@@ -546,10 +540,8 @@ class LibyanDataSeeder extends Seeder
 
     /**
      * المرحلة 6 — الطلبات والرسائل والإشعارات وسجلات كلمة المرور:
-     *  - 12 طلباً بأحادية الاعتماد القائمة (status + admin_note فقط):
-     *    4 نقل معتمَدة (الطالب فعلاً عند الوجهة وfrom_* تاريخه السابق) +
-     *    3 معلّقة (منها داخلي لمركز له مدير + داخلي للمرج ⇒ إشعاره للأدمن fallback) +
-     *    3 مرفوضة بأسباب عربية مكتوبة + 2 إضافة بلقطة بيانات كاملة.
+     *  - 3 طلبات إضافة قديمة (النوع add — بلقطة بيانات كاملة): معتمَد + معلّق +
+     *    مرفوض بسبب عربي. لا طلبات نقل: النقل بين المراكز ولا مركز آخر.
      *  - ~15 محادثة ولي↔محفّظ حول حالة الابن، مقروء وغير مقروء بالاتجاهين.
      *  - إشعارات لكل دور (مطابقة لصيغة InAppNotification المخزّنة) مزيجاً.
      *  - password_change_logs بالطرق الثلاث otp/self/admin مع مزامنة عدّادات users.
@@ -557,78 +549,26 @@ class LibyanDataSeeder extends Seeder
     private function seedRequestsAndComms(): void
     {
         $now = now();
-        [$c1, $c2, $c3, $marj] = $this->centers;
+        $c1 = $this->centers[0];
         $t = fn (Center $c, int $i) => $this->teachersByCenter[$c->id][$i % count($this->teachersByCenter[$c->id])];
         $stuOf = fn (Center $c, int $i) => $this->studentsByCenter[$c->id][$i % count($this->studentsByCenter[$c->id])];
 
-        // ===== 12 طلباً =====
-        $requests = [];
-        // 4 نقل معتمَدة: الطالب حالياً عند محفّظ الوجهة، وfrom_* مصدره السابق
-        foreach ([[$c1, $c2, 5], [$c2, $c3, 8], [$c3, $c1, 11], [$marj, $c1, 14]] as $ri => [$fromC, $toC, $si]) {
-            $student = $stuOf($toC, $si);
-            $requests[] = [
-                'type' => 'transfer', 'status' => 'approved',
-                'requested_by' => $student->teacher_id ?? $t($toC, 0)->id,
-                'target_center_id' => $toC->id, 'target_teacher_id' => $student->teacher_id ?? $t($toC, 0)->id,
-                'student_id' => $student->id, 'national_id' => $student->national_id,
-                'nationality_type' => $student->nationality_type, 'student_name' => $student->name,
-                'from_center_id' => $fromC->id, 'from_teacher_id' => $t($fromC, 1)->id,
-                'admin_note' => null,
-                'created_at' => $now->copy()->subWeeks(5 - $ri), 'updated_at' => $now->copy()->subWeeks(5 - $ri)->addDay(),
-            ];
-        }
-        // 3 معلّقة: داخلي بمركز له مدير + داخلي بالمرج (fallback أدمن) + عابر للمراكز
-        $pendingSpecs = [
-            [$c1, $c1, 20],   // داخلي — يذهب لمدير مركز بلال
-            [$marj, $marj, 3], // داخلي بالمرج — لا مدير ⇒ الأدمن
-            [$c2, $c3, 17],   // عابر — الأدمن
-        ];
-        foreach ($pendingSpecs as $pi => [$fromC, $toC, $si]) {
-            $student = $stuOf($fromC, $si);
-            $requester = $t($toC, 2 + $pi); // محفّظ الوجهة
-            if ($requester->id === $student->teacher_id) { // لا يطلب المرء طالبه
-                $requester = $t($toC, 3 + $pi);
-            }
-            $requests[] = [
-                'type' => 'transfer', 'status' => 'pending',
-                'requested_by' => $requester->id,
-                'target_center_id' => $toC->id, 'target_teacher_id' => $requester->id,
-                'student_id' => $student->id, 'national_id' => $student->national_id,
-                'nationality_type' => $student->nationality_type, 'student_name' => $student->name,
-                'from_center_id' => $student->center_id, 'from_teacher_id' => $student->teacher_id,
-                'admin_note' => null,
-                'created_at' => $now->copy()->subDays(3 + $pi), 'updated_at' => $now->copy()->subDays(3 + $pi),
-            ];
-        }
-        // 3 مرفوضة بأسباب عربية
+        // ===== 3 طلبات إضافة قديمة (لا نقل — مركز واحد) =====
         $rejections = [
-            'المحفّظ المستهدف مكتمل العدد هذا الفصل — يُعاد الطلب بعد شهر',
-            'ولي الأمر لم يوافق على النقل بعد التواصل معه هاتفياً',
             'بيانات الطالب ناقصة: لا رقم وطني ولا شهادة ميلاد مرفقة',
         ];
-        foreach ($rejections as $ji => $note) {
-            $fromC = $this->centers[$ji % 3];
-            $toC   = $this->centers[($ji + 1) % 3];
-            $student = $stuOf($fromC, 25 + $ji);
-            $requester = $t($toC, $ji);
-            $requests[] = [
-                'type' => 'transfer', 'status' => 'rejected',
-                'requested_by' => $requester->id,
-                'target_center_id' => $toC->id, 'target_teacher_id' => $requester->id,
-                'student_id' => $student->id, 'national_id' => $student->national_id,
-                'nationality_type' => $student->nationality_type, 'student_name' => $student->name,
-                'from_center_id' => $student->center_id, 'from_teacher_id' => $student->teacher_id,
-                'admin_note' => $note,
-                'created_at' => $now->copy()->subWeeks(2)->subDays($ji), 'updated_at' => $now->copy()->subWeeks(2)->subDays($ji)->addHours(20),
-            ];
-        }
-        // 2 إضافة بلقطة كاملة (معتمَد + معلّق)
-        foreach ([['approved', $c2, 'قيس رمضان الكيلاني', 'qais'], ['pending', $c3, 'حمزة عياد السنوسي', 'hamza']] as $ai => [$st, $c, $name, $latin]) {
-            $requester = $t($c, 1 + $ai);
+        $requests = [];
+        $addSpecs = [
+            ['approved', 'قيس رمضان الكيلاني',  'qais',  null],
+            ['pending',  'حمزة عياد السنوسي',   'hamza', null],
+            ['rejected', 'سراج فتحي القطعاني',  'siraj', $rejections[0]],
+        ];
+        foreach ($addSpecs as $ai => [$st, $name, $latin, $note]) {
+            $requester = $t($c1, 1 + $ai);
             $requests[] = [
                 'type' => 'add', 'status' => $st,
                 'requested_by' => $requester->id,
-                'target_center_id' => $c->id, 'target_teacher_id' => $requester->id,
+                'target_center_id' => $c1->id, 'target_teacher_id' => $requester->id,
                 'student_id' => null,
                 'national_id' => '1' . str_pad((string) (59900000001 + $ai), 11, '0', STR_PAD_LEFT),
                 'nationality_type' => 'libyan', 'student_name' => $name,
@@ -638,7 +578,7 @@ class LibyanDataSeeder extends Seeder
                 'guardian_nationality_type' => 'libyan',
                 'guardian_id_number' => '1' . str_pad((string) (59900000101 + $ai), 11, '0', STR_PAD_LEFT),
                 'from_center_id' => null, 'from_teacher_id' => null,
-                'admin_note' => null,
+                'admin_note' => $note,
                 'created_at' => $now->copy()->subDays(6 + $ai), 'updated_at' => $now->copy()->subDays(5 + $ai),
             ];
         }
@@ -700,16 +640,13 @@ class LibyanDataSeeder extends Seeder
             ];
         };
         $nRows = [];
-        // الأدمن: طلبات معلّقة (منها المرج fallback) — مزيج مقروء/غير مقروء
-        $nRows[] = $notif($this->admin, 'request_created', 'طلب جديد بانتظار الموافقة', 'طلب نقل داخلي بمركز المرج (بلا مدير) آل إليك.', null, 'admin/requests.html', false, 2);
-        $nRows[] = $notif($this->admin, 'request_created', 'طلب جديد بانتظار الموافقة', 'محفّظ أرسل طلب نقل عابر للمراكز.', null, 'admin/requests.html', true, 4);
-        // المدراء النشطون: الداخلي لمركزهم
+        // مدير المركز: طلب الإضافة المعلّق بمركزه (الأدمن ليس طرفاً في الطلبات)
         foreach ($this->managersByCenter as $cid => $mgr) {
-            $nRows[] = $notif($mgr, 'request_created', 'طلب نقل داخلي بمركزك', 'محفّظ من مركزك طلب نقل طالب إليه — بانتظار اعتمادك.', null, 'manager/requests.html', $cid !== $c1->id, 3);
+            $nRows[] = $notif($mgr, 'request_created', 'طلب جديد بمركزك', 'محفّظ من مركزك أرسل طلب إضافة طالب — بانتظار اعتمادك.', null, 'manager/requests.html', false, 3);
         }
-        // محفّظون: موافقة ورفض ورسالة
-        $nRows[] = $notif($t($c1, 0), 'request_approved', 'تمت الموافقة على طلبك', 'اعتُمد نقل الطالب إلى حلقتك.', null, 'teacher/requests.html', false, 1);
-        $nRows[] = $notif($t($c2, 0), 'request_rejected', 'تم رفض طلبك', 'رُفض الطلب: ' . $rejections[0], null, 'teacher/requests.html', true, 5);
+        // محفّظون: موافقة ورفض (لا صفحة طلبات للمحفّظ — يرى النتيجة في «طلابي»)
+        $nRows[] = $notif($t($c1, 1), 'request_approved', 'تمت الموافقة على طلبك', 'اعتُمد طلب إضافة الطالب إلى حلقتك.', null, 'teacher/students.html', false, 1);
+        $nRows[] = $notif($t($c1, 3), 'request_rejected', 'تم رفض طلبك', 'رُفض الطلب: ' . $rejections[0], null, 'teacher/students.html', true, 5);
         // أولياء وأمهات: حفظ واختبار ورسائل — مزيج
         foreach ($threads->take(6) as $pi => $s) {
             $p = User::find($s->parent_id);
@@ -724,10 +661,10 @@ class LibyanDataSeeder extends Seeder
 
         // ===== سجلات تغيير كلمة المرور (otp / self / admin) مع مزامنة عدّادات users =====
         $pwdTargets = [
-            [$t($c1, 1), 'self', 12],  [$t($c2, 1), 'admin', 20],
-            [$t($c3, 0), 'otp', 8],    [$this->parents[3], 'otp', 15],
+            [$t($c1, 1), 'self', 12],  [$t($c1, 3), 'admin', 20],
+            [$t($c1, 0), 'otp', 8],    [$this->parents[3], 'otp', 15],
             [$this->parents[9], 'otp', 6], [$this->parents[15], 'self', 25],
-            [$this->managersByCenter[$c2->id], 'admin', 30],
+            [$this->managersByCenter[$c1->id], 'admin', 30],
         ];
         $logRows = [];
         foreach ($pwdTargets as [$u, $method, $daysAgo]) {
@@ -749,16 +686,16 @@ class LibyanDataSeeder extends Seeder
 
     /**
      * المرحلة 7 — نشط/غير نشط وحالات الحافّة:
-     *  - ~8% من الطلاب (10) والمحفّظين (1 معاون) وأولياء الأمور (5) يُعطَّلون
+     *  - ~10% من الطلاب (5) ومحفّظ معاون واحد وولِيّا أمر يُعطَّلون
      *    بحقول التدقيق (status_changed_by = مدير المركز المسؤول أو الأدمن).
      *    المدراء عندهم معطَّل واحد أصلاً (المرحلة 2)، والمراكز تبقى نشطة
-     *    (8% من 4 ≈ 0 — وتعطيل مركز يقفل حساباته عن بروفة الدخول).
+     *    (تعطيل المركز الوحيد يقفل كل الحسابات عن بروفة الدخول).
      *  - كل موقوف عنده حضور وحفظ واختبارات سابقة بالفعل (بُذرت له في 4-5)
      *    — برهان «صفر فقدان بيانات».
      *  - أول أسرة (4 أبناء): ابن موقوف وإخوته نشطون — حالة ولي الأمر المطلوبة.
      *  - الختّامون الأربعة مستثنون من الإيقاف (تبقى ختماتهم ظاهرة).
-     *  - بقية الحالات الإلزامية بُذرت في مراحلها: 10 بلا محفّظ بformer_teacher_name،
-     *    39 بلا رقم وطني، المرج بلا مدير.
+     *  - بقية الحالات الإلزامية بُذرت في مراحلها: 4 بلا محفّظ بformer_teacher_name،
+     *    وطلاب بلا رقم وطني.
      */
     private function seedEdgeCases(): void
     {
@@ -767,11 +704,11 @@ class LibyanDataSeeder extends Seeder
             ? $this->managersByCenter[$centerId]->id
             : $this->admin->id;
 
-        // 1) الطلاب: ابن من الأسرة الرباعية الأولى + كل 13 طالباً حتى 10، بلا ختّامين
+        // 1) الطلاب: ابن من الأسرة الرباعية الأولى + كل 13 طالباً حتى 5، بلا ختّامين
         $firstFamilyChild = collect($this->students)->firstWhere('parent_id', $this->parents[0]->id);
         $suspendIds = [$firstFamilyChild->id];
         foreach ($this->students as $i => $s) {
-            if (count($suspendIds) >= 10) {
+            if (count($suspendIds) >= 5) {
                 break;
             }
             if ($i % 13 === 5 && ! in_array($s->id, $this->khatmaStudentIds, true) && ! in_array($s->id, $suspendIds, true)) {
@@ -794,7 +731,7 @@ class LibyanDataSeeder extends Seeder
             'status_changed_at' => $changedAt,
         ]);
 
-        // 3) خمسة أولياء أمور يُعطَّلون — ليس بينهم ولي الأسرة الرباعية (يجب أن
+        // 3) وليّا أمر يُعطَّلان — ليس بينهما ولي الأسرة الرباعية (يجب أن
         //    يدخل ليرى ابنه الموقوف بجانب النشطين)
         $inactiveParents = collect($this->parents)
             ->filter(fn ($p, $i) => $i % 14 === 9 && $p->id !== $this->parents[0]->id)
