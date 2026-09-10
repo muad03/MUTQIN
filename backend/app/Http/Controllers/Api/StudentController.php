@@ -348,6 +348,15 @@ class StudentController extends Controller
                 'teacher_id' => $request->teacher_id,
             ]);
         } else {
+            // المحفّظ لا يُسند طالباً لغيره ولا يفكّ إسناده — كان الحقل يُسقَط بصمت،
+            // والآن رفض صريح (مدير المركز وحده عبر PUT /manager/students/{id}/teacher)
+            if ($request->has('teacher_id')) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'تغيير محفّظ الطالب من صلاحية مدير المركز فقط',
+                ], 403);
+            }
+
             $request->validate([
                 'name'           => 'required|string|max:255',
                 'phone'          => 'nullable|string|max:20',
@@ -411,6 +420,87 @@ class StudentController extends Controller
                 ? "تم تفعيل الطالب «{$student->name}» — عاد إلى قوائم الحضور والتقارير"
                 : "تم إيقاف الطالب «{$student->name}» — خرج من الحضور والبصمة والتقارير، وسجلّه محفوظ",
             'data' => ['id' => $student->id, 'is_active' => $student->is_active],
+        ]);
+    }
+    /**
+     * تغيير محفّظ الطالب أو فكّ إسناده — مدير المركز حصراً، وضمن مركزه فقط:
+     *  - teacher_id = NULL قيمة صالحة صراحةً (الطالب يصبح «بدون محفّظ» — لا إسناد تلقائي لأحد).
+     *  - المحفّظ الجديد يجب أن يكون نشطاً ومن مركز المدير نفسه، وإلا 422 عربية.
+     *  - الطالب الموقوف يُغيَّر محفّظه أيضاً (لا شرط على is_active).
+     *  - يحفظ اسم المحفّظ السابق في former_teacher_name للعرض («محفّظ سابق: فلان»).
+     *  - لا إشعار لهذا الإجراء.
+     */
+    public function changeTeacher(Request $request, $id)
+    {
+        $user = $request->user();
+
+        // الدور محسوم في الباك لا في الواجهة (فوق بوابة manager)
+        if (!$user->isCenterManager()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'تغيير محفّظ الطالب من صلاحية مدير المركز فقط',
+            ], 403);
+        }
+
+        // «present» لا «required»: NULL قيمة مقصودة، أما غياب الحقل كلياً فخطأ
+        $request->validate([
+            'teacher_id' => 'present|nullable|integer',
+        ], [
+            'teacher_id.present' => 'حقل المحفّظ مطلوب (أرسل NULL لفكّ الإسناد)',
+            'teacher_id.integer' => 'معرّف المحفّظ غير صالح',
+        ]);
+
+        $student = Student::findOrFail($id);
+
+        if ((int) $student->center_id !== (int) $user->center_id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'هذا الطالب ليس من طلاب مركزك',
+            ], 403);
+        }
+
+        $teacher = null;
+        if ($request->input('teacher_id') !== null) {
+            $teacher = User::where('id', (int) $request->input('teacher_id'))
+                ->where('role', 'teacher')
+                ->where('center_id', $user->center_id)
+                ->where('is_active', true)
+                ->first();
+
+            if (!$teacher) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'المحفّظ المختار غير صالح',
+                    'errors'  => ['teacher_id' => ['يجب أن يكون المحفّظ نشطاً ومن محفّظي مركزك']],
+                ], 422);
+            }
+        }
+
+        $previous = $student->teacher; // قد يكون null
+        $newId    = $teacher?->id;
+
+        if ((int) $student->teacher_id === (int) $newId && $student->teacher_id !== null) {
+            // نفس المحفّظ — لا تغيير ولا مساس بالمحفّظ السابق
+        } else {
+            $student->update([
+                'teacher_id'          => $newId,
+                'former_teacher_name' => $previous ? $previous->name : $student->former_teacher_name,
+            ]);
+        }
+
+        $student->load('teacher');
+
+        return response()->json([
+            'success' => true,
+            'message' => $teacher
+                ? "تم إسناد الطالب «{$student->name}» إلى المحفّظ «{$teacher->name}»"
+                : "تم فكّ إسناد الطالب «{$student->name}» — أصبح بدون محفّظ",
+            'data' => [
+                'id'                  => $student->id,
+                'teacher_id'          => $student->teacher_id,
+                'teacher'             => $student->teacher ? ['id' => $student->teacher->id, 'name' => $student->teacher->name] : null,
+                'former_teacher_name' => $student->former_teacher_name,
+            ],
         ]);
     }
 
