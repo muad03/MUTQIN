@@ -67,7 +67,7 @@
             { name: 'guardian_name', label: 'اسم ولي الأمر', required: true },
             { name: 'guardian_email', label: 'بريد ولي الأمر', type: 'email', required: true, help: 'يُنشأ به حساب دخول لولي الأمر' },
             { name: 'guardian_phone', label: 'هاتف ولي الأمر' },
-            { name: 'guardian_password', label: 'كلمة مرور ولي الأمر', type: 'password', help: 'إن تُركت فارغة: password' },
+            { name: 'guardian_password', label: 'كلمة مرور ولي الأمر', type: 'password', required: true, help: 'إلزامية — 6 أحرف على الأقل، ولا تُولَّد تلقائياً' },
         ];
     }
     // نموذج التعديل/النقل بين المعلمين
@@ -111,7 +111,7 @@
               <label class="mq-label">${label} ${opts.req ? '<span style="color:#B23A48;">*</span>' : ''}</label>
               ${opts.type === 'select'
                 ? `<select class="mq-input" name="${name}">${opts.options}</select>`
-                : `<input class="mq-input" name="${name}" type="${opts.type || 'text'}" placeholder="${opts.ph || ''}">`}
+                : `<input class="mq-input" name="${name}" type="${opts.type || 'text'}" placeholder="${opts.ph || ''}" ${opts.req ? 'required' : ''}>`}
               ${opts.help ? `<div style="font-size:12px;color:#7A8F82;margin-top:4px;">${opts.help}</div>` : ''}
               <div class="mq-field-error" data-error="${name}"></div>
             </div>`;
@@ -190,7 +190,7 @@
                 </div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
                   ${inp('guardian_phone', 'هاتف ولي الأمر')}
-                  ${inp('guardian_password', 'كلمة المرور', { type: 'password', help: 'إن تُركت: password' })}
+                  ${inp('guardian_password', 'كلمة المرور', { type: 'password', req: true, help: 'إلزامية — 6 أحرف على الأقل، ولا تُولَّد تلقائياً' })}
                 </div>
               </div>
 
