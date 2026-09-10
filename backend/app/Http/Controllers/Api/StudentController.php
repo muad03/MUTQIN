@@ -250,6 +250,39 @@ class StudentController extends Controller
      * بحث أولياء الأمور (admin فقط) — لاختيار ولي أمر موجود عند إضافة طالب.
      * يطابق الاسم (متجاهلاً التشكيل) أو الهاتف (تطابق جزئي). GET /api/parents/search?q=
      */
+    /**
+     * بحث ولي أمر موجود لمدير المركز — بالرقم الوطني (id_number) حصراً:
+     *  - center_manager فقط (فوق بوابة manager) ومقيّد بدور parent.
+     *  - يعيد الاسم + الرقم الوطني + عدد الأبناء فقط (لا هاتف ولا بريد ولا قائمة أبناء).
+     *  - الربط لاحقاً يتم بـparent_id_number في POST /manager/students.
+     */
+    public function managerSearchParents(Request $request)
+    {
+        if (!$request->user()->isCenterManager()) {
+            return response()->json(['success' => false, 'message' => 'هذا البحث لمدير المركز فقط'], 403);
+        }
+
+        // أرقام فقط (تُقبل الأرقام العربية) — 3 أرقام على الأقل قبل البحث
+        $digits = preg_replace('/\D/u', '', strtr((string) $request->get('q', ''),
+            ['٠'=>'0','١'=>'1','٢'=>'2','٣'=>'3','٤'=>'4','٥'=>'5','٦'=>'6','٧'=>'7','٨'=>'8','٩'=>'9']));
+        if (strlen($digits) < 3) {
+            return response()->json(['success' => true, 'data' => []]);
+        }
+
+        $parents = User::where('role', 'parent')
+            ->where('id_number', 'like', $digits . '%')
+            ->withCount('children')
+            ->orderBy('id_number')
+            ->limit(10)
+            ->get()
+            ->map(fn ($p) => [
+                'name'           => $p->name,
+                'id_number'      => $p->id_number,
+                'children_count' => $p->children_count,
+            ]);
+
+        return response()->json(['success' => true, 'data' => $parents]);
+    }
     public function searchParents(Request $request)
     {
         $q = trim((string) $request->get('q', ''));
