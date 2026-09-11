@@ -6,8 +6,8 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * كود العرض القصير — فريد على مستوى النظام كله، عدّاد مستقل لكل نوع:
- *   student → S1..  |  teacher → T1..  |  center_manager → CA1..
- * (مدير النظام وولي الأمر: لا كود عرض.)
+ *   student → S1..  |  teacher → T1..  |  center_manager → CA1..  |  parent → P1..
+ * (مدير النظام وحده بلا كود عرض.)
  *
  * الحجز ذرّي عبر UPDATE واحد على جدول code_sequences:
  * قفل الصف يمنع تكرار الرقم تحت التزامن، والعدّاد لا ينقص أبداً
@@ -20,6 +20,7 @@ class DisplayCode
         'student'        => 'S',
         'teacher'        => 'T',
         'center_manager' => 'CA',
+        'parent'         => 'P',   // ولي الأمر (P1, P2..) — كود دخول بديل عن البريد
         'center'         => 'C',   // المراكز (C1, C2..) — كيان لا مستخدم
     ];
 

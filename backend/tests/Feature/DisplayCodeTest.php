@@ -76,13 +76,18 @@ class DisplayCodeTest extends TestCase
         }
     }
 
-    public function test_admin_and_parent_get_no_display_code(): void
+    public function test_admin_has_no_display_code_and_parents_get_p_codes(): void
     {
-        $admin  = $this->makeAdmin();
-        $parent = $this->makeParent();
+        $admin = $this->makeAdmin();
+        $p1    = $this->makeParent();
+        $t1    = $this->makeTeacher();
+        $p2    = $this->makeParent();
 
         $this->assertNull($admin->display_code);
-        $this->assertNull($parent->display_code);
+        $this->assertSame('P1', $p1->display_code); // أول ولي أمر = P1
+        $this->assertSame('P2', $p2->display_code);
+        $this->assertSame('T1', $t1->display_code); // عدّاد المحفّظين مستقل
+        $this->assertSame(2, \Illuminate\Support\Facades\DB::table('code_sequences')->where('name', 'parent')->value('value'));
     }
 
     public function test_manager_created_via_api_gets_ca_code_and_lists_expose_codes(): void

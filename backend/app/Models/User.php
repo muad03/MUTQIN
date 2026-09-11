@@ -29,12 +29,12 @@ class User extends Authenticatable
         'status_changed_at',
     ];
 
-    // كود العرض يُحجز تلقائياً عند الإنشاء حسب الدور: محفّظ T1..، مدير مركز CA1..
-    // (الأدمن وولي الأمر بلا كود — يبقى NULL)
+    // كود العرض يُحجز تلقائياً عند الإنشاء حسب الدور: محفّظ T1..، مدير مركز CA1..، ولي أمر P1..
+    // (الأدمن وحده بلا كود — يبقى NULL). الحسابات القائمة لا تُعاد ترقيمها: التوليد للجدد فقط.
     protected static function booted(): void
     {
         static::creating(function (User $user) {
-            if (empty($user->display_code) && in_array($user->role, ['teacher', 'center_manager'], true)) {
+            if (empty($user->display_code) && in_array($user->role, ['teacher', 'center_manager', 'parent'], true)) {
                 $user->display_code = \App\Support\DisplayCode::next($user->role);
             }
         });
