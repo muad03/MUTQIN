@@ -26,7 +26,6 @@
     if (!id) { pc.innerHTML = '<div class="mq-empty"><h3>لا يوجد مركز محدّد</h3></div>'; return; }
 
     const esc = UI.escapeHtml;
-    const PAGE_SIZE = 5; // القائمة المختصرة — الترقيم من الخادم (paginate(5))
 
     // ===== مكوّنات صغيرة =====
     const meta = (lbl, val) => `<div class="mq-center-meta-item">
@@ -94,8 +93,80 @@
         ${section('👤 مدير المركز', 'mgr')}
         ${managerHtml}
 
-`;
+        ${section('🧑‍🏫 المحفّظون', 'tch')}
+        <div class="mq-card"><div class="rp-scroll"><table class="mq-table">
+          <thead><tr><th style="width:75px;">الكود</th><th>الاسم</th><th>النوع</th><th style="width:110px;text-align:center;">طلابه النشطون</th><th>الهاتف</th><th style="width:95px;text-align:center;">الحالة</th></tr></thead>
+          <tbody id="tch-body"><tr><td colspan="6" style="text-align:center;color:#7A8F82;padding:18px;">جارٍ التحميل...</td></tr></tbody>
+        </table></div>
+        <div class="mq-more" id="tch-more" hidden><button class="mq-btn mq-btn--secondary mq-btn--sm" id="tch-more-btn">إظهار المزيد ↓</button></div></div>
 
+        ${section('👥 الطلاب', 'stu')}
+        <div class="mq-card"><div class="rp-scroll"><table class="mq-table">
+          <thead><tr><th style="width:75px;">الكود</th><th>الطالب</th><th style="width:70px;">العمر</th><th>المحفّظ</th><th>الرقم الوطني</th><th style="width:95px;text-align:center;">الحالة</th></tr></thead>
+          <tbody id="stu-body"><tr><td colspan="6" style="text-align:center;color:#7A8F82;padding:18px;">جارٍ التحميل...</td></tr></tbody>
+        </table></div>
+        <div class="mq-more" id="stu-more" hidden><button class="mq-btn mq-btn--secondary mq-btn--sm" id="stu-more-btn">إظهار المزيد ↓</button></div></div>`;
+
+    // ===== 4) و5) القوائم المختصرة مع «إظهار المزيد» — الترقيم من الخادم =====
+    const teacherRow = t => `
+        <tr>
+          <td>${t.display_code ? `<span class="mq-code">${esc(t.display_code)}</span>` : '—'}</td>
+          <td style="font-weight:600;">${esc(t.name)}</td>
+          <td>${t.type === 'محفظ أساسي' ? UI.badge('محفظ أساسي', 'success') : UI.badge('محفظ معاون', 'secondary')}</td>
+          <td style="text-align:center;">${UI.badge((t.active_students_count ?? 0) + ' طالب', 'info')}</td>
+          <td>${esc(t.phone || '—')}</td>
+          <td style="text-align:center;">${t.is_active ? UI.badge('نشط', 'success') : UI.badge('غير نشط', 'danger')}</td>
+        </tr>`;
+    const studentRow = s => `
+        <tr>
+          <td>${s.display_code ? `<span class="mq-code">${esc(s.display_code)}</span>` : '—'}</td>
+          <td><div style="font-weight:600;">${esc(s.name)}</div>
+            <div style="font-size:11.5px;color:#9DB3A6;">${esc(s.guardian_name || '')}</div></td>
+          <td>${s.age ?? '—'}</td>
+          <td>${s.teacher ? esc(s.teacher.name)
+              : (s.former_teacher_name
+                  ? `<span style="color:#9A7A1E;">سابقاً: ${esc(s.former_teacher_name)}</span>`
+                  : '<span style="color:#B23A48;font-weight:700;">— بدون محفّظ —</span>')}</td>
+          <td>${s.national_id
+              ? `<span style="direction:ltr;display:inline-block;font-weight:600;color:#04532F;">${esc(s.national_id)}</span>`
+              : '<span class="mq-badge mq-badge-warning">بدون رقم</span>'}</td>
+          <td style="text-align:center;">${s.is_active ? UI.badge('نشط', 'success') : UI.badge('موقوف', 'danger')}</td>
+        </tr>`;
+
+    // قائمة مرقّمة عامة: تحمّل صفحة، تُلحق الصفوف، وتُظهر الزر ما دامت هناك صفحات
+    function pagedList({ key, path, row, empty }) {
+        const body = document.getElementById(key + '-body');
+        const more = document.getElementById(key + '-more');
+        const btn = document.getElementById(key + '-more-btn');
+        const count = document.getElementById(key + '-count');
+        let page = 0, lastPage = 1, total = 0, loaded = 0;
+
+        async function loadNext() {
+            btn.disabled = true;
+            try {
+                const res = await API.get(path + '?page=' + (page + 1));
+                const pg = res.data, batch = pg.data || [];
+                page = pg.current_page ?? page + 1; lastPage = pg.last_page ?? 1; total = pg.total ?? batch.length;
+                const html = batch.map(row).join('');
+                if (page === 1) body.innerHTML = batch.length ? html : `<tr><td colspan="6" style="text-align:center;color:#9DB3A6;padding:18px;">${empty}</td></tr>`;
+                else body.insertAdjacentHTML('beforeend', html);
+                loaded += batch.length;
+                count.textContent = total ? `عرض ${loaded} من ${total} (النشطون)` : '';
+                more.hidden = !(page < lastPage);
+            } catch (e) {
+                if (page === 0) body.innerHTML = `<tr><td colspan="6" style="text-align:center;color:#B23A48;padding:18px;">${esc(e.message)}</td></tr>`;
+                else UI.toast(e.message, 'danger');
+            } finally { btn.disabled = false; }
+        }
+        btn.onclick = loadNext;
+        return loadNext();
+    }
+
+    const base = '/centers/' + encodeURIComponent(id);
+    await Promise.all([
+        pagedList({ key: 'tch', path: base + '/teachers', row: teacherRow, empty: 'لا يوجد محفّظون نشطون في هذا المركز' }),
+        pagedList({ key: 'stu', path: base + '/students', row: studentRow, empty: 'لا طلاب نشطون في هذا المركز' }),
+    ]);
 })();
 </script>
 </body>
