@@ -397,4 +397,165 @@ class ReportService
             'year'           => (int) $year,
         ];
     }
+
+    // ============================================================
+    // تقارير مدير المركز الثلاثة (كل السجلات — لا مدى زمني): مركز · محفّظ · طالب.
+    // استعلامات مجمّعة فقط (بلا N+1)، والنشطون فقط. التعريفات نفسها المعتمدة أعلاه:
+    // نسبة الحضور = حاضر ÷ الإجمالي، نسبة الغياب = غائب ÷ الإجمالي، الختمة = 30 جزءاً
+    // مكتملاً (progress) — التعريف القائم، لا عدّاد ختمات تاريخياً.
+    // «متقدّم» و«متفوّق» بلا تعريف في النظام فلا تُحسب.
+    // ============================================================
+
+    /** تجميع مشترك لمجموعة طلاب: حضور + اختبارات + حفظ (تقدّم كل طالب وجودة السجلات). */
+    protected function aggregateAllTime($studentIds): array
+    {
+        $ids = collect($studentIds)->values();
+
+        $att = Attendance::whereIn('student_id', $ids)
+            ->selectRaw("COUNT(*) AS total, COALESCE(SUM(status = 'present'), 0) AS present, COALESCE(SUM(status = 'late'), 0) AS late, COALESCE(SUM(status = 'absent'), 0) AS absent")
+            ->first();
+        $tests = WeeklyTest::whereIn('student_id', $ids)
+            ->selectRaw("COUNT(*) AS total, COALESCE(SUM(result = 'ناجح'), 0) AS passed, COALESCE(SUM(result = 'راسب'), 0) AS failed")
+            ->first();
+        $quality = Memorization::whereIn('student_id', $ids)
+            ->selectRaw('quality, COUNT(*) AS c')->groupBy('quality')->pluck('c', 'quality');
+        $bySurah = Memorization::whereIn('student_id', $ids)->whereNotNull('surah_name')
+            ->get(['student_id', 'surah_name'])->groupBy('student_id');
+
+        $progressOf = [];
+        $sumJuz = 0; $khatmat = 0;
+        foreach ($ids as $id) {
+            $p = \App\Support\SurahReference::progress(($bySurah[$id] ?? collect())->pluck('surah_name')->all());
+            $progressOf[$id] = $p;
+            $sumJuz += $p['completed_count'];
+            if ($p['completed_count'] === 30) $khatmat++;
+        }
+
+        $attTotal = (int) $att->total;
+        return [
+            'attendance' => [
+                'total'          => $attTotal,
+                'present'        => (int) $att->present,
+                'late'           => (int) $att->late,
+                'absent'         => (int) $att->absent,
+                'percent'        => $this->pct((int) $att->present, $attTotal),
+                'absent_percent' => $this->pct((int) $att->absent, $attTotal),
+            ],
+            'tests' => [
+                'total'        => (int) $tests->total,
+                'passed'       => (int) $tests->passed,
+                'failed'       => (int) $tests->failed,
+                'pass_percent' => $this->pct((int) $tests->passed, (int) $tests->total),
+            ],
+            'memorization' => [
+                'records'           => (int) $quality->sum(),
+                'quality'           => [
+                    'excellent' => (int) ($quality['excellent'] ?? 0),
+                    'good'      => (int) ($quality['good'] ?? 0),
+                    'average'   => (int) ($quality['average'] ?? 0),
+                    'weak'      => (int) ($quality['weak'] ?? 0),
+                ],
+                'avg_completed_juz' => $ids->count() ? round($sumJuz / $ids->count(), 1) : 0,
+                'khatmat'           => $khatmat,
+            ],
+            'progressOf' => $progressOf,
+        ];
+    }
+
+    /** تقرير المركز (كل السجلات): أعداد + حضور/غياب + اختبارات + حفظ وختمات. */
+    public function centerAllTime(int $centerId): array
+    {
+        $students = Student::where('center_id', $centerId)->where('is_active', true)->pluck('id');
+        $agg = $this->aggregateAllTime($students);
+        unset($agg['progressOf']);
+
+        return array_merge([
+            'students_count' => $students->count(),
+            'teachers_count' => User::where('role', 'teacher')->where('center_id', $centerId)->where('is_active', true)->count(),
+        ], $agg);
+    }
+
+    /** تقرير محفّظ (كل السجلات): بياناته + المجاميع + صف لكل طالب نشط عنده. */
+    public function teacherAllTime(User $teacher): array
+    {
+        $students = Student::where('teacher_id', $teacher->id)->where('is_active', true)
+            ->orderBy('name')->get(['id', 'name', 'display_code', 'age']);
+        $ids = $students->pluck('id');
+        $agg = $this->aggregateAllTime($ids);
+        $progressOf = $agg['progressOf'];
+        unset($agg['progressOf']);
+
+        $attBy = Attendance::whereIn('student_id', $ids)
+            ->selectRaw("student_id, COUNT(*) AS total, COALESCE(SUM(status = 'present'), 0) AS present, COALESCE(SUM(status = 'absent'), 0) AS absent")
+            ->groupBy('student_id')->get()->keyBy('student_id');
+        $testsBy = WeeklyTest::whereIn('student_id', $ids)
+            ->selectRaw("student_id, COUNT(*) AS total, COALESCE(SUM(result = 'ناجح'), 0) AS passed")
+            ->groupBy('student_id')->get()->keyBy('student_id');
+
+        $rows = $students->map(function ($s) use ($attBy, $testsBy, $progressOf) {
+            $a = $attBy->get($s->id); $t = $testsBy->get($s->id); $p = $progressOf[$s->id];
+            return [
+                'id' => $s->id, 'name' => $s->name, 'display_code' => $s->display_code, 'age' => $s->age,
+                'attendance_percent' => $this->pct((int) ($a->present ?? 0), (int) ($a->total ?? 0)),
+                'absent'             => (int) ($a->absent ?? 0),
+                'attendance_total'   => (int) ($a->total ?? 0),
+                'tests_total'        => (int) ($t->total ?? 0),
+                'tests_passed'       => (int) ($t->passed ?? 0),
+                'pass_percent'       => $this->pct((int) ($t->passed ?? 0), (int) ($t->total ?? 0)),
+                'completed_juz'      => $p['completed_count'],
+                'reached_juz'        => $p['reached_juz'],
+                'completed_quran'    => $p['completed_count'] === 30,
+            ];
+        })->values();
+
+        return array_merge([
+            'teacher' => [
+                'id' => $teacher->id, 'name' => $teacher->name, 'display_code' => $teacher->display_code,
+                'type' => $teacher->type, 'is_active' => $teacher->is_active, 'email' => $teacher->email, 'phone' => $teacher->phone,
+            ],
+            'students_count' => $students->count(),
+        ], $agg, ['students' => $rows]);
+    }
+
+    /** تقرير طالب شامل (كل السجلات): بياناته والمحفّظ وولي الأمر + حضور + اختبارات + مقدار القرآن المُتمّ والجزء الحالي والختمة. */
+    public function studentAllTime(Student $student): array
+    {
+        $student->loadMissing(['center:id,name', 'teacher:id,name,display_code,type', 'parent:id,name,phone,email']);
+        $agg = $this->aggregateAllTime([$student->id]);
+        $p = $agg['progressOf'][$student->id];
+        unset($agg['progressOf']);
+
+        $tests = WeeklyTest::where('student_id', $student->id)->orderByDesc('exam_date')->orderByDesc('id')
+            ->limit(20)->get(['id', 'exam_date', 'result', 'notes']);
+        $recent = Memorization::where('student_id', $student->id)->orderByDesc('date')->orderByDesc('id')
+            ->limit(10)->get(['id', 'date', 'surah_name', 'juz', 'quality', 'notes']);
+
+        return array_merge([
+            'student' => [
+                'id' => $student->id, 'name' => $student->name, 'display_code' => $student->display_code,
+                'age' => $student->age, 'national_id' => $student->national_id, 'phone' => $student->phone,
+                'nationality_type' => $student->nationality_type, 'nationality_name' => $student->nationality_name,
+                'enrollment_date' => $student->enrollment_date, 'is_active' => $student->is_active,
+                'center_name' => $student->center->name ?? null,
+                'former_teacher_name' => $student->former_teacher_name,
+            ],
+            'teacher' => $student->teacher ? [
+                'id' => $student->teacher->id, 'name' => $student->teacher->name,
+                'display_code' => $student->teacher->display_code, 'type' => $student->teacher->type,
+            ] : null,
+            'parent' => $student->parent ? [
+                'id' => $student->parent->id, 'name' => $student->parent->name, 'phone' => $student->parent->phone,
+            ] : ['id' => null, 'name' => $student->guardian_name, 'phone' => $student->guardian_phone],
+            'progress' => [
+                'completed_juz'     => $p['completed_count'],
+                'completed_down_to' => $p['completed_down_to'],
+                'completion_percent'=> $this->pct($p['completed_count'], 30),
+                'reached_juz'       => $p['reached_juz'],
+                'reached_juz_done'  => $p['reached_juz_done'],
+                'last_surah'        => $p['last_surah'],
+                'completed_quran'   => $p['completed_count'] === 30,
+                'khatmat'           => $p['completed_count'] === 30 ? 1 : 0,
+            ],
+        ], $agg, ['recent_tests' => $tests, 'recent_memorizations' => $recent]);
+    }
 }

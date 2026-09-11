@@ -575,6 +575,48 @@ class CenterManagerController extends Controller
      * المجموعة 2 — تقارير إدارة المركز (أداء المحفّظين، التوزيع، بلا محفّظ،
      * الملخّص العام). النطاق مفروض من الحساب، بلا N+1 (ReportService::centerManagement).
      */
+    /** تقرير المركز — كل السجلات، النشطون فقط (القسم 1 من صفحة التقارير). */
+    public function reportCenter(Request $request)
+    {
+        $centerId = $request->user()->center_id;
+
+        return response()->json([
+            'success' => true,
+            'data' => array_merge(
+                ['center' => \App\Models\Center::find($centerId, ['id', 'name', 'display_code', 'city'])],
+                app(\App\Services\ReportService::class)->centerAllTime($centerId)
+            ),
+        ]);
+    }
+
+    /** تقرير محفّظ — محفّظ من مركز آخر → 403 عربية (القسم 2). */
+    public function reportTeacher(Request $request, $id)
+    {
+        $teacher = User::where('role', 'teacher')->findOrFail($id);
+        if ((int) $teacher->center_id !== (int) $request->user()->center_id) {
+            return response()->json(['success' => false, 'message' => 'هذا المحفّظ ليس من محفّظي مركزك'], 403);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => app(\App\Services\ReportService::class)->teacherAllTime($teacher),
+        ]);
+    }
+
+    /** تقرير طالب شامل — طالب من مركز آخر → 403 عربية (القسم 3). */
+    public function reportStudent(Request $request, $id)
+    {
+        $student = Student::findOrFail($id);
+        if ((int) $student->center_id !== (int) $request->user()->center_id) {
+            return response()->json(['success' => false, 'message' => 'هذا الطالب ليس من طلاب مركزك'], 403);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => app(\App\Services\ReportService::class)->studentAllTime($student),
+        ]);
+    }
+
     public function reportsManagement(Request $request)
     {
         $centerId = $request->user()->center_id;

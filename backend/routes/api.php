@@ -71,6 +71,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/manager/attendance/{id}/status', [\App\Http\Controllers\Api\CenterManagerController::class, 'correctAttendance']); // تصحيح حالة سجل واحد
         Route::get('/manager/reports/system', [\App\Http\Controllers\Api\CenterManagerController::class, 'reportsSystem']); // المجموعة1: تقارير النظام مضيَّقة بمركزه
         Route::get('/manager/reports/management', [\App\Http\Controllers\Api\CenterManagerController::class, 'reportsManagement']); // المجموعة2: تقارير إدارة المركز
+        // صفحة التقارير بأقسامها الثلاثة (كل السجلات، النشطون فقط) — المحفّظ/الطالب خارج مركزه → 403
+        Route::get('/manager/reports/center', [\App\Http\Controllers\Api\CenterManagerController::class, 'reportCenter']);
+        Route::get('/manager/reports/teacher/{id}', [\App\Http\Controllers\Api\CenterManagerController::class, 'reportTeacher']);
+        Route::get('/manager/reports/student/{id}', [\App\Http\Controllers\Api\CenterManagerController::class, 'reportStudent']);
         // تصدير PDF ضمن نطاق مركزه (نفس قوالب الأدمن، center_id من الحساب)
         Route::get('/manager/reports/center/pdf', [\App\Http\Controllers\Api\ReportPdfController::class, 'managerCenter']);
         Route::get('/manager/reports/at-risk/pdf', [\App\Http\Controllers\Api\ReportPdfController::class, 'managerAtRisk']);
