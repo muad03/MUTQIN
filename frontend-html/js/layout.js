@@ -33,6 +33,7 @@
             ['dashboard',  'الرئيسية', 'home', 'manager/dashboard.html'],
             ['teachers',   'محفّظو مركزي', 'teachers', 'manager/teachers.html'],
             ['students',   'طلاب مركزي', 'students', 'manager/students.html'],
+            ['parents',    'أولياء الأمور', 'parents', 'manager/parents.html'],
             ['attendance', 'استيراد الحضور', 'attendance', 'manager/attendance.html'],
             ['attendance-review', 'مراجعة الحضور', 'report', 'manager/attendance-review.html'],
             ['reports',    'التقارير', 'report', 'manager/reports.html'],
