@@ -52,17 +52,22 @@ class TeacherController extends Controller
 
     public function store(Request $request)
     {
+        // البريد لا يُقبل من العميل: يُولَّد {latin}_{code}@mutqin.ly من الاسم اللاتيني بعد حجز الكود
+        $prefix = strtolower(trim((string) $request->input('email_prefix', '')));
+        $prefix = preg_replace('/@.*$/', '', $prefix);
+        $request->merge(['email_prefix' => $prefix]);
+
         $request->validate([
-            'name'     => 'required|string|max:255',
-            'email'    => 'required|email|unique:users,email',
-            'phone'    => 'nullable|string|max:20',
-            'password' => 'required|min:6|confirmed',
-            'center_id'=> 'required|exists:centers,id',
-            'type'     => 'required|in:محفظ أساسي,محفظ معاون',
+            'name'         => 'required|string|max:255',
+            'email_prefix' => ['required', 'string', 'max:40', 'regex:/^[a-z]+(\.[a-z]+)*$/'],
+            'phone'        => 'nullable|string|max:20',
+            'password'     => 'required|min:6|confirmed',
+            'center_id'    => 'required|exists:centers,id',
+            'type'         => 'required|in:محفظ أساسي,محفظ معاون',
         ], [
-            'name.required'      => 'اسم المحفظ مطلوب',
-            'email.required'     => 'البريد الإلكتروني مطلوب',
-            'email.unique'       => 'هذا البريد مستخدم مسبقاً',
+            'name.required'         => 'اسم المحفظ مطلوب',
+            'email_prefix.required' => 'الاسم اللاتيني مطلوب (مثل: ahmed.ali)',
+            'email_prefix.regex'    => 'الصيغة: أحرف لاتينية صغيرة (ونقطة اختيارياً)، مثل ahmed أو ahmed.ali',
             'password.required'  => 'كلمة المرور مطلوبة',
             'password.min'       => 'كلمة المرور 6 أحرف على الأقل',
             'password.confirmed' => 'كلمتا المرور غير متطابقتين',
@@ -73,20 +78,24 @@ class TeacherController extends Controller
         // قاعدة: محفّظ أساسي واحد فقط لكل مركز
         $this->assertSinglePrimary($request->center_id, $request->type);
 
-        // transaction: إنشاء المحفّظ + حجز كود العرض (T..) ينجحان معاً أو يُلغيان معاً
-        $teacher = \Illuminate\Support\Facades\DB::transaction(fn () => User::create([
-            'name'     => $request->name,
-            'email'    => $request->email,
-            'phone'    => \App\Support\PhoneNumber::normalize($request->phone),
-            'role'     => 'teacher',
-            'password' => Hash::make($request->password),
-            'center_id'=> $request->center_id,
-            'type'     => $request->type,
-        ]));
+        // transaction: إنشاء المحفّظ + حجز كود العرض (T..) + بناء البريد ينجحون معاً أو يُلغون معاً
+        $teacher = \Illuminate\Support\Facades\DB::transaction(function () use ($request, $prefix) {
+            $u = User::create([
+                'name'     => $request->name,
+                'email'    => \App\Support\LoginEmail::temporary(),
+                'phone'    => \App\Support\PhoneNumber::normalize($request->phone),
+                'role'     => 'teacher',
+                'password' => Hash::make($request->password),
+                'center_id'=> $request->center_id,
+                'type'     => $request->type,
+            ]);
+
+            return \App\Support\LoginEmail::assign($u, $prefix);
+        });
 
         return response()->json([
             'success' => true,
-            'message' => 'تم إضافة المحفظ بنجاح للمركز',
+            'message' => 'تم إضافة المحفظ بنجاح للمركز — بريده: ' . $teacher->email,
             'data' => $teacher
         ], 201);
     }

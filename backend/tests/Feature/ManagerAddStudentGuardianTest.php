@@ -97,7 +97,8 @@ class ManagerAddStudentGuardianTest extends TestCase
         $parent = User::find($r->json('data.parent_id'));
         $this->assertSame('parent', $parent->role);
         $this->assertSame('199000000003', $parent->id_number);
-        $this->assertMatchesRegularExpression('/^[a-z0-9.]+\.' . $parent->id . '@parent\.mutqin\.ly$/', $parent->email);
+        $this->assertSame('P1', $parent->display_code);
+        $this->assertMatchesRegularExpression('/^[a-z0-9.]+_p1@mutqin\.ly$/', $parent->email); // {نقحرة}_{كود}@mutqin.ly
 
         // كلمة المرور هي المُرسَلة حرفياً (لا عشوائية)
         $this->app['auth']->forgetGuards();

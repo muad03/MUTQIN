@@ -152,22 +152,22 @@ class CenterManagerTest extends TestCase
             'name' => 'مدير بلا كلمة', 'email_prefix' => 'no.pass', 'center_id' => $center->id,
         ])->assertStatus(422);
 
-        // إنشاء سليم → البريد بمخطط {prefix}.centeradmin@mutqin.ly
+        // إنشاء سليم → البريد بمخطط {prefix}_{code}@mutqin.ly (الكود يميّزه)
         $r = $this->authed($token)->postJson('/api/admin/managers', [
             'name' => 'معاذ', 'email_prefix' => 'muad',
             'password' => 'secret123', 'password_confirmation' => 'secret123',
             'center_id' => $center->id,
         ])->assertStatus(201);
-        $this->assertSame('muad.centeradmin@mutqin.ly', $r->json('data.email'));
+        $this->assertSame('muad_ca1@mutqin.ly', $r->json('data.email'));
 
-        // نفس الاسم اللاتيني لمركز آخر → 422 برسالة واضحة (البريد محجوز)
+        // نفس الاسم اللاتيني لمركز آخر → مقبول: الكود التالي يميّز البريد
         $center2 = $this->makeCenter();
-        $this->authed($token)->postJson('/api/admin/managers', [
+        $r2 = $this->authed($token)->postJson('/api/admin/managers', [
             'name' => 'معاذ آخر', 'email_prefix' => 'muad',
             'password' => 'secret123', 'password_confirmation' => 'secret123',
             'center_id' => $center2->id,
-        ])->assertStatus(422)
-          ->assertJsonValidationErrors(['email_prefix']);
+        ])->assertStatus(201);
+        $this->assertSame('muad_ca2@mutqin.ly', $r2->json('data.email'));
     }
 
     public function test_transfer_request_notifies_target_manager_only_and_never_admin(): void

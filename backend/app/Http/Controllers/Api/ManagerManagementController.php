@@ -49,8 +49,8 @@ class ManagerManagementController extends Controller
 
     public function store(Request $request)
     {
-        // معرّف مدير المركز بالمخطط: {الاسم اللاتيني}.centeradmin@mutqin.ly
-        // (مثل muad.centeradmin@mutqin.ly) — بلا لاحقة معرّف رقمي.
+        // بريد مدير المركز يُولَّد بالمخطط الموحّد {الاسم اللاتيني}_{الكود}@mutqin.ly
+        // (مثل muad_ca1@mutqin.ly) بعد حجز الكود — لا يُقبل من العميل.
         // كلمة المرور مطلوبة صراحةً عند الإنشاء — لا توليد صامت (درس S1).
 
         // تسامح مع الإدخال: من يكتب البريد كاملاً (mohammad.centeradmin@mutqin.ly)
@@ -78,23 +78,19 @@ class ManagerManagementController extends Controller
 
         $this->assertSingleSupervisor($request->center_id);
 
-        // البريد محسوب مسبقاً (لا يعتمد على المعرّف) — نتحقق من تفرّده برسالة واضحة
-        $email = $request->email_prefix . '.centeradmin@mutqin.ly';
-        if (User::where('email', $email)->exists()) {
-            throw \Illuminate\Validation\ValidationException::withMessages([
-                'email_prefix' => ["الاسم اللاتيني «{$request->email_prefix}» مستخدم بالفعل ({$email}) — اختر اسماً آخر"],
+        // transaction: إنشاء المدير + حجز كود العرض (CA..) + بناء البريد من الكود ينجحون معاً أو يُلغون معاً
+        $manager = \Illuminate\Support\Facades\DB::transaction(function () use ($request, $prefix) {
+            $u = User::create([
+                'name'      => $request->name,
+                'email'     => \App\Support\LoginEmail::temporary(),
+                'phone'     => PhoneNumber::normalize($request->phone),
+                'role'      => 'center_manager',
+                'password'  => Hash::make($request->password),
+                'center_id' => $request->center_id,
             ]);
-        }
 
-        // transaction: إنشاء المدير + حجز كود العرض (CA..) ينجحان معاً أو يُلغيان معاً
-        $manager = \Illuminate\Support\Facades\DB::transaction(fn () => User::create([
-            'name'      => $request->name,
-            'email'     => $email,
-            'phone'     => PhoneNumber::normalize($request->phone),
-            'role'      => 'center_manager',
-            'password'  => Hash::make($request->password),
-            'center_id' => $request->center_id,
-        ]));
+            return \App\Support\LoginEmail::assign($u, $prefix);
+        });
 
         return response()->json([
             'success' => true,

@@ -103,7 +103,7 @@ class CenterManagerController extends Controller
      *  - role='teacher' مثبَّت بالكود — مدير المركز لا يستطيع إنشاء أي دور آخر.
      *  - display_code لا يُقرأ من الطلب (يولّده خطاف User::creating).
      *  - كلمة المرور مطلوبة صراحةً (لا توليد صامت — درس S1).
-     *  - البريد يُولّد بالصيغة المعتمدة {latin}.{id}@mutqin.ly بخطوتين.
+     *  - البريد يُولّد بالصيغة المعتمدة {latin}_{code}@mutqin.ly بخطوتين (LoginEmail).
      *  - منع تعدد الأساسي داخل transaction (فحص + إنشاء ذرّياً ضد السباق).
      */
     public function storeTeacher(Request $request)
@@ -143,21 +143,18 @@ class CenterManagerController extends Controller
                 }
             }
 
-            // خطوتان: إنشاء ببريد مؤقت ثم ضبط النهائي {latin}.{id}@mutqin.ly (id لا يوجد إلا بعد الإدراج)
+            // خطوتان: إنشاء ببريد مؤقت ثم ضبط النهائي {latin}_{code}@mutqin.ly (الكود يُحجز في الخطاف)
             // الحقول صريحة: role وcenter_id مفروضان هنا لا من الطلب، وdisplay_code من الخطاف
             $u = User::create([
                 'name'      => $request->name,
-                'email'     => 'tmp-' . \Illuminate\Support\Str::random(14) . '@mutqin.ly',
+                'email'     => \App\Support\LoginEmail::temporary(),
                 'phone'     => PhoneNumber::normalize($request->phone),
                 'role'      => 'teacher',       // مثبَّت — لا يُقبل من العميل
                 'center_id' => $centerId,       // من النطاق — لا يُقبل من العميل
                 'type'      => $request->type,
                 'password'  => Hash::make($request->password),
             ]);
-            $u->email = $prefix . '.' . $u->id . '@mutqin.ly';
-            $u->save();
-
-            return $u;
+            return \App\Support\LoginEmail::assign($u, $prefix);
         });
 
         return response()->json([

@@ -5,6 +5,7 @@ namespace App\Support;
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use App\Support\LoginEmail;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -13,8 +14,8 @@ use Illuminate\Validation\ValidationException;
  *
  * الترتيب: رقم الهوية (المعرّف الثابت) → الهاتف المطبَّع → البريد — كلها ضمن
  * دور parent فقط (S2). إن لم يوجد: إنشاء حساب جديد — كلمة المرور إلزامية
- * (لا توليد صامت إطلاقاً — قرار معتمد)، والبريد إن غاب يُولَّد بالنظام الثابت
- * {نقحرة}.{id}@parent.mutqin.ly على خطوتين (المعرّف لا يُعرف إلا بعد الإدراج)،
+ * (لا توليد صامت إطلاقاً — قرار معتمد)، والبريد يُولَّد دائماً بالمخطط الموحّد
+ * {نقحرة}_{كود P}@mutqin.ly على خطوتين (LoginEmail) — بريد العميل للمطابقة فقط،
  * مع التقاط سباق التزامن على القيود الفريدة وإعادة المطابقة.
  *
  * سلوك الفشل موحّد: بيانات ولي أمر موجودة لكن يتعذّر الإنشاء (بريد مفقود/مستخدم،
@@ -75,23 +76,17 @@ class ParentResolver
                 'guardian_password' => ['كلمة مرور ولي الأمر مطلوبة لإنشاء حسابه'],
             ]);
         }
-        if ($email && User::where('email', $email)->exists()) {
-            throw ValidationException::withMessages([
-                'guardian_email' => ['بريد ولي الأمر مستخدم لحساب آخر (غير ولي أمر) — استخدم بريداً آخر'],
-            ]);
-        }
         if ($idNumber && User::where('id_number', $idNumber)->exists()) {
             throw ValidationException::withMessages([
                 'guardian_id_number' => ['رقم هوية ولي الأمر مسجّل لحساب آخر'],
             ]);
         }
 
-        // بريد غائب → مؤقت فريد ثم البريد النهائي بعد معرفة المعرّف (خطوتان)
-        $generateEmail = !$email;
+        // البريد لا يُقبل من العميل للحساب الجديد: مؤقت ثم النهائي {نقحرة}_{p-code}@mutqin.ly (خطوتان)
         try {
             $parent = User::create([
                 'name'             => $name ?: 'ولي أمر',
-                'email'            => $email ?: ('pending-' . Str::uuid() . '@parent.mutqin.ly'),
+                'email'            => LoginEmail::temporary(),
                 'phone'            => $phone,
                 'role'             => 'parent',
                 'password'         => Hash::make($password),
@@ -99,12 +94,9 @@ class ParentResolver
                 'nationality_name' => $natName,
                 'id_number'        => $idNumber ?: null,
             ]);
-            if ($generateEmail) {
-                $latin = Str::slug(Str::ascii($parent->name), '.') ?: 'parent';
-                $parent->forceFill(['email' => "{$latin}.{$parent->id}@parent.mutqin.ly"])->save();
-            }
+            $latin = Str::slug(Str::ascii($parent->name), '.') ?: 'parent';
 
-            return $parent;
+            return LoginEmail::assign($parent, $latin);
         } catch (\Illuminate\Database\QueryException $e) {
             // سباق تزامن: القيد الفريد أوقف الإنشاء الثاني — نعيد المطابقة بالحساب السابق
             $existing = ($idNumber ? User::where('role', 'parent')->where('id_number', $idNumber)->first() : null)
