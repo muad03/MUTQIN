@@ -262,7 +262,10 @@
               <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
                 <label style="cursor:pointer;"><input type="radio" name="gmode" value="existing" style="margin-left:5px;">ولي أمر موجود</label>
                 <label style="cursor:pointer;"><input type="radio" name="gmode" value="new" checked style="margin-left:5px;">ولي أمر جديد</label>
+                <label style="cursor:pointer;"><input type="radio" name="gmode" value="none" style="margin-left:5px;">بدون ولي أمر</label>
               </div>
+
+              <div id="gm-none" style="display:none;color:#7A8F82;font-size:13px;background:#FBF9EE;border-radius:10px;padding:11px 14px;margin-bottom:10px;">سيُسجَّل الطالب بدون ولي أمر — حالة صالحة، ولا يُربط بأي حساب تلقائياً.</div>
 
               <div id="gm-existing" style="display:none;">
                 <div style="position:relative;">
@@ -300,12 +303,13 @@
         ov.querySelectorAll('[data-close]').forEach(b => b.onclick = close);
         ov.addEventListener('mousedown', e => { if (e.target === ov) close(); });
 
-        // تبديل مسارَي ولي الأمر
-        const secNew = ov.querySelector('#gm-new'), secEx = ov.querySelector('#gm-existing');
+        // تبديل مسارات ولي الأمر الثلاثة: موجود / جديد / بدون (تُخفى كل الحقول ولا تُرسل)
+        const secNew = ov.querySelector('#gm-new'), secEx = ov.querySelector('#gm-existing'), secNone = ov.querySelector('#gm-none');
         const gmode = () => ov.querySelector('input[name="gmode"]:checked').value;
         ov.querySelectorAll('input[name="gmode"]').forEach(r => r.onchange = () => {
             secNew.style.display = gmode() === 'new' ? 'block' : 'none';
             secEx.style.display = gmode() === 'existing' ? 'block' : 'none';
+            secNone.style.display = gmode() === 'none' ? 'block' : 'none';
         });
 
         // جنسية الطالب: الرقم الوطني للّيبي فقط، واسم الجنسية للأجنبي فقط
@@ -367,10 +371,11 @@
                 age: f.age.value || null,
                 phone: f.phone.value || null,
             };
+            v.guardian_mode = gmode(); // الخادم يتجاهل كل حقول ولي الأمر عند none
             if (gmode() === 'existing') {
                 if (!chosenParent) { ov.querySelector('[data-error="parent_id_number"]').textContent = 'ابحث بالرقم الوطني واختر ولي الأمر من النتائج'; return; }
                 v.parent_id_number = chosenParent.id_number;
-            } else {
+            } else if (gmode() === 'new') {
                 v.guardian_id_number = f.guardian_id_number.value || null;
                 v.guardian_name = f.guardian_name.value || null;
                 v.guardian_phone = f.guardian_phone.value || null;

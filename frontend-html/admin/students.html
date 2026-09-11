@@ -203,7 +203,7 @@
                 <div class="mq-field-error" data-error="parent_id"></div>
               </div>
 
-              <div id="gm-none" style="display:none;color:#7A8F82;font-size:13px;background:#FBF9EE;border-radius:10px;padding:11px 14px;">سيُسجَّل الطالب بدون ولي أمر (يمكن ربطه لاحقاً).</div>
+              <div id="gm-none" style="display:none;color:#7A8F82;font-size:13px;background:#FBF9EE;border-radius:10px;padding:11px 14px;">سيُسجَّل الطالب بدون ولي أمر — حالة صالحة، ولا يُربط بأي حساب تلقائياً.</div>
 
               <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:18px;">
                 <button type="button" class="mq-btn mq-btn--secondary" data-close>إلغاء</button>
@@ -299,6 +299,7 @@
                 age: f.age.value || null, phone: f.phone.value || null,
             };
             const mode = ov.querySelector('input[name="gmode"]:checked').value;
+            v.guardian_mode = mode; // الخادم يتجاهل كل حقول ولي الأمر عند none
             if (mode === 'new') {
                 v.guardian_name = f.guardian_name.value || null;
                 v.guardian_email = f.guardian_email.value || null;

@@ -165,6 +165,15 @@ class StudentController extends Controller
         // ينشئ الطالب ويربطه بحساب ولي أمر (role='parent').
         $user = $request->user();
 
+        // «بدون ولي أمر» (guardian_mode=none): حالة صالحة ودائمة — تُتجاهل كل حقول ولي
+        // الأمر وروابطه مهما أُرسلت، فلا يُنشأ حساب ولا يُربط الطالب بأحد (parent_id = NULL).
+        if ($request->input('guardian_mode') === 'none') {
+            $request->replace(array_diff_key($request->all(), array_flip([
+                'parent_id', 'parent_id_number', 'guardian_name', 'guardian_email', 'guardian_phone',
+                'guardian_password', 'guardian_nationality_type', 'guardian_nationality_name', 'guardian_id_number',
+            ])));
+        }
+
         // أمان — مدير المركز: center_id يُفرض من نطاقه لا من الطلب (يتجاهل أي
         // قيمة يرسلها العميل)، فلا يضيف طالباً لمركز آخر مهما زوّر الجسم.
         if ($user->isCenterManager()) {
