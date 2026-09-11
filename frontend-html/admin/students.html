@@ -216,14 +216,21 @@
         ov.querySelectorAll('[data-close]').forEach(b => b.onclick = close);
         ov.addEventListener('mousedown', e => { if (e.target === ov) close(); });
 
-        // تبديل الأوضاع
+        // تبديل الأوضاع — سمة required تُزال من حقول القسم المخفي (وإلا منع المتصفح الإرسال
+        // بصمت لحقل إلزامي مخفي) وتُعاد عند إظهاره؛ تحقق المتصفح يبقى فعّالاً في بقية النموذج
         const secNew = ov.querySelector('#gm-new'), secEx = ov.querySelector('#gm-existing'), secNone = ov.querySelector('#gm-none');
-        ov.querySelectorAll('input[name="gmode"]').forEach(r => r.onchange = () => {
+        [secNew, secEx].forEach(sec => sec.querySelectorAll('[required]').forEach(el => el.dataset.req = '1'));
+        const syncRequired = (sec, on) => sec.querySelectorAll('[data-req]').forEach(el => { el.required = on; });
+        const applyMode = () => {
             const m = ov.querySelector('input[name="gmode"]:checked').value;
             secNew.style.display = m === 'new' ? 'block' : 'none';
             secEx.style.display = m === 'existing' ? 'block' : 'none';
             secNone.style.display = m === 'none' ? 'block' : 'none';
-        });
+            syncRequired(secNew, m === 'new');
+            syncRequired(secEx, m === 'existing');
+        };
+        ov.querySelectorAll('input[name="gmode"]').forEach(r => r.onchange = applyMode);
+        applyMode();
 
         // إظهار «اسم الجنسية» وتغيير تسمية حقل الرقم عند اختيار «أجنبي»
         function wireNat(selId, wrapId, labelId, helpId, libLabel, forLabel, libHelp, forHelp) {

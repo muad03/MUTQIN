@@ -209,7 +209,7 @@
               <label class="mq-label">${label} ${opts.req ? '<span style="color:#B23A48;">*</span>' : ''}</label>
               ${opts.type === 'select'
                 ? `<select class="mq-input" name="${name}">${opts.options}</select>`
-                : `<input class="mq-input" name="${name}" type="${opts.type || 'text'}" placeholder="${opts.ph || ''}" ${opts.attrs || ''}>`}
+                : `<input class="mq-input" name="${name}" type="${opts.type || 'text'}" placeholder="${opts.ph || ''}" ${opts.req ? 'required' : ''} ${opts.attrs || ''}>`}
               ${opts.help ? `<div style="font-size:12px;color:#7A8F82;margin-top:4px;">${opts.help}</div>` : ''}
               <div class="mq-field-error" data-error="${name}"></div>
             </div>`;
@@ -303,14 +303,22 @@
         ov.querySelectorAll('[data-close]').forEach(b => b.onclick = close);
         ov.addEventListener('mousedown', e => { if (e.target === ov) close(); });
 
-        // تبديل مسارات ولي الأمر الثلاثة: موجود / جديد / بدون (تُخفى كل الحقول ولا تُرسل)
+        // تبديل مسارات ولي الأمر الثلاثة: موجود / جديد / بدون (تُخفى كل الحقول ولا تُرسل).
+        // سمة required تُزال من حقول القسم المخفي (وإلا منع المتصفح الإرسال بصمت لحقل
+        // إلزامي مخفي) وتُعاد عند إظهاره؛ تحقق المتصفح يبقى فعّالاً في بقية النموذج
         const secNew = ov.querySelector('#gm-new'), secEx = ov.querySelector('#gm-existing'), secNone = ov.querySelector('#gm-none');
         const gmode = () => ov.querySelector('input[name="gmode"]:checked').value;
-        ov.querySelectorAll('input[name="gmode"]').forEach(r => r.onchange = () => {
+        [secNew, secEx].forEach(sec => sec.querySelectorAll('[required]').forEach(el => el.dataset.req = '1'));
+        const syncRequired = (sec, on) => sec.querySelectorAll('[data-req]').forEach(el => { el.required = on; });
+        const applyMode = () => {
             secNew.style.display = gmode() === 'new' ? 'block' : 'none';
             secEx.style.display = gmode() === 'existing' ? 'block' : 'none';
             secNone.style.display = gmode() === 'none' ? 'block' : 'none';
-        });
+            syncRequired(secNew, gmode() === 'new');
+            syncRequired(secEx, gmode() === 'existing');
+        };
+        ov.querySelectorAll('input[name="gmode"]').forEach(r => r.onchange = applyMode);
+        applyMode();
 
         // جنسية الطالب: الرقم الوطني للّيبي فقط، واسم الجنسية للأجنبي فقط
         const natSel = ov.querySelector('#s-nat');
