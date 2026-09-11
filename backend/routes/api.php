@@ -93,6 +93,10 @@ Route::middleware('auth:sanctum')->group(function () {
         // لا حذف للمركز إطلاقاً (قرار معتمد) — بديله تفعيل/تعطيل
         Route::apiResource('centers', CenterController::class)->except(['destroy']);
         Route::put('/centers/{id}/status', [CenterController::class, 'toggleStatus']); // تفعيل/تعطيل (مدير النظام فقط)
+        // صفحة تفاصيل المركز (أدمن): إحصائيات مجمّعة + قائمتان مرقّمتان 5/صفحة (النشطون افتراضياً)
+        Route::get('/centers/{id}/stats', [CenterController::class, 'stats']);
+        Route::get('/centers/{id}/teachers', [CenterController::class, 'teachers']);
+        Route::get('/centers/{id}/students', [CenterController::class, 'students']);
         Route::post('/students', [StudentController::class, 'store']); // نقل مسار إضافة طالب ليكون للمدير فقط
         Route::put('/students/{id}/status', [StudentController::class, 'toggleStatus']); // إيقاف/تفعيل — بديل الحذف
         Route::get('/students/next-code', [StudentController::class, 'nextCode']); // معاينة كود الطالب التالي (لا حجز)
