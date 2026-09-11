@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>تفاصيل الطالب | مُتقِن</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.rtl.min.css" rel="stylesheet">
+<link href="../css/theme.css" rel="stylesheet">
+</head>
+<body>
+<div id="app-shell"></div>
+
+<script src="../js/config.js"></script>
+<script src="../js/api.js"></script>
+<script src="../js/auth.js"></script>
+<script src="../js/ui.js"></script>
+<script src="../js/layout.js"></script>
+<script>
+(async function () {
+    // الملكية تُفحص في الخادم (طلاب المحفّظ فقط → وإلا 403) — هذا توجيه للواجهة فقط
+    const user = Auth.requireAuth(['teacher', 'admin']);
+    if (!user) return;
+    const pc = Layout.mount({ user, active: 'students', title: 'تفاصيل الطالب' });
+
+    const id = new URLSearchParams(location.search).get('id');
+    if (!id) { pc.innerHTML = '<div class="mq-empty"><h3>لا يوجد طالب محدّد</h3></div>'; return; }
+
+    const esc = UI.escapeHtml;
+    const el = i => document.getElementById(i);
+    const info = (lbl, val) => `<div class="mq-center-meta-item">
+        <div class="mq-center-meta-lbl">${lbl}</div>
+        <div class="mq-center-meta-val">${esc(val ?? '—')}</div></div>`;
+    const stat = (v, l, k, sub = '') => `<div class="mq-stat ${k || ''}"><span class="mq-stat-ico">${UI.star(22)}</span>
+        <div><div class="mq-stat-val">${v}</div><div class="mq-stat-lbl">${l}</div>${sub ? `<div class="mq-stat-sub">${sub}</div>` : ''}</div></div>`;
+    const QUALITY = { excellent: ['ممتاز', 'success'], good: ['جيد', 'primary'], average: ['مقبول', 'warning'], weak: ['ضعيف', 'danger'] };
+    const notes = n => n ? `<div class="sd-note">📝 ${esc(n)}</div>` : '';
+    const thumnList = qs => (qs && qs.length)
+        ? qs.map(q => `<div class="sd-thumn"><span class="sd-thumn-dot ${q.result === 'ناجح' ? 'is-pass' : 'is-fail'}"></span>
+             <span class="sd-thumn-text">${esc(q.eighth_start)}</span>${q.mistake ? `<span class="sd-thumn-mistake">${esc(q.mistake)}</span>` : ''}</div>`).join('')
+        : '<span style="color:#9DB3A6;">—</span>';
+
+    // ===== التفاصيل (كل السجلات) =====
+    let d;
+    try { d = (await API.get('/students/' + encodeURIComponent(id) + '/details')).data; }
+    catch (e) { pc.innerHTML = `<div class="mq-empty"><h3>تعذّر عرض الطالب</h3><p>${esc(e.message)}</p></div>`; return; }
+    const s = d.student || {}, a = d.attendance || {}, t = d.tests || {}, pr = d.progress || {}, q = d.memorization_quality || {}, rc = d.recent || {};
+    const natLabel = s.nationality_type === 'foreigner' ? ('أجنبي' + (s.nationality_name ? ' — ' + s.nationality_name : '')) : 'ليبي';
+
+    const memoRows = (rc.memorizations || []).length ? rc.memorizations.map(m => `<tr>
+          <td style="white-space:nowrap;">${UI.fmtDate(m.date)}</td><td style="font-weight:600;">${esc(m.surah_name)}</td>
+          <td style="text-align:center;">${m.juz ?? '—'}</td><td>${m.page_from && m.page_to ? m.page_from + '–' + m.page_to : '—'}</td>
+          <td>${UI.qualityBadge(m.quality)}</td><td style="color:#7A8F82;">${esc(m.notes || '—')}</td></tr>`).join('')
+        : '<tr><td colspan="6" style="text-align:center;color:#9DB3A6;padding:16px;">لا توجد سجلات</td></tr>';
+    const attRows = (rc.attendances || []).length ? rc.attendances.map(x => `<tr>
+          <td style="white-space:nowrap;">${UI.fmtDate(x.date)}</td><td>${UI.attendanceBadge(x.status)}</td>
+          <td style="direction:ltr;text-align:right;">${esc(x.time ? String(x.time).slice(0, 5) : '—')}</td>
+          <td style="color:#7A8F82;">${esc(x.notes || '—')}${x.corrected_at ? ' <span class="mq-badge mq-badge-info">مصحَّح</span>' : ''}</td></tr>`).join('')
+        : '<tr><td colspan="4" style="text-align:center;color:#9DB3A6;padding:16px;">لا توجد سجلات</td></tr>';
+    const testRows = (rc.tests || []).length ? rc.tests.map(x => `<tr>
+          <td style="white-space:nowrap;vertical-align:top;">${UI.fmtDate(x.exam_date)}</td><td style="vertical-align:top;">${UI.resultBadge(x.result)}</td>
+          <td style="vertical-align:top;">${thumnList(x.questions)}</td><td style="vertical-align:top;color:#7A8F82;">${esc(x.notes || '—')}</td></tr>`).join('')
+        : '<tr><td colspan="4" style="text-align:center;color:#9DB3A6;padding:16px;">لا توجد اختبارات</td></tr>';
+
+    pc.innerHTML = `
+        <a class="mq-btn mq-btn--secondary mq-btn--sm" href="students.html" style="margin-bottom:16px;">→ العودة لطلابي</a>
+
+        <div class="mq-card" style="margin-bottom:20px;"><div class="mq-card-body mq-center-head">
+          <div class="mq-center-head-top">
+            <span class="mq-avatar mq-manager-avatar">${UI.initial(s.name)}</span>
+            <h2 class="mq-center-name">${esc(s.name || '—')}</h2>
+            ${s.display_code ? `<span class="mq-code" style="font-size:14px;">${esc(s.display_code)}</span>` : ''}
+            ${s.is_active ? UI.badge('نشط', 'success') : UI.badge('موقوف', 'danger')}
+          </div>
+          <div class="mq-center-meta">
+            ${info('🎂 العمر', s.age != null ? s.age + ' سنة' : null)}${info('📞 هاتف الطالب', s.phone)}
+            ${info('🪪 الرقم الوطني', s.national_id)}${info('🌍 الجنسية', natLabel)}
+            ${info('🏫 المركز', s.center_name)}${info('📅 تاريخ الالتحاق', s.enrollment_date ? UI.fmtDate(s.enrollment_date) : null)}
+            ${s.former_teacher_name ? info('🧑‍🏫 محفّظ سابق', s.former_teacher_name) : ''}
+          </div>
+        </div></div>
+
+        <div class="mq-stats">
+          ${stat(a.percent + '%', 'نسبة الحضور', 'blue', `حاضر ${a.present} من ${a.total} سجلاً`)}
+          ${stat(a.absent, 'الغياب', 'red')}
+          ${stat(a.late, 'التأخير', 'orange')}
+          ${stat(`${t.passed} / ${t.total}`, 'الاختبارات (ناجح / الكل)', 'gold', `راسب ${t.failed} · نسبة النجاح ${t.pass_percent}%`)}
+          ${stat(`${pr.completed_juz} / 30`, 'الأجزاء المكتملة', 'gold', `${pr.completion_percent}% من القرآن`)}
+          ${stat(pr.reached_juz ?? '—', 'الجزء الحالي', 'blue', pr.reached_juz ? (pr.reached_juz_done ? 'مكتمل' : 'قيد الحفظ') + (pr.last_surah ? ' · آخر سورة: ' + esc(pr.last_surah) : '') : 'لا سجلات حفظ بعد')}
+          ${stat(pr.completed_quran ? 1 : 0, 'الختمة', pr.completed_quran ? 'gold' : 'green', pr.completed_quran ? 'أتمّ القرآن كاملاً' : 'لم يُتمّ بعد')}
+        </div>
+        <div class="rp-quality"><span class="rp-quality-lbl">جودة سجلات الحفظ:</span>${Object.keys(QUALITY).map(k => `<span class="mq-badge mq-badge-${QUALITY[k][1]}">${QUALITY[k][0]}: ${q[k] ?? 0}</span>`).join('')}</div>
+
+        <div class="mq-section"><h3 class="mq-section-title">📖 آخر سجلات الحفظ</h3></div>
+        <div class="mq-card"><div class="rp-scroll"><table class="mq-table">
+          <thead><tr><th>التاريخ</th><th>السورة</th><th style="text-align:center;">الجزء</th><th>الصفحات</th><th>الجودة</th><th>ملاحظات</th></tr></thead>
+          <tbody>${memoRows}</tbody></table></div></div>
+
+        <div class="mq-section"><h3 class="mq-section-title">📋 آخر الحضور</h3></div>
+        <div class="mq-card"><div class="rp-scroll"><table class="mq-table">
+          <thead><tr><th>التاريخ</th><th>الحالة</th><th>الوقت</th><th>ملاحظات</th></tr></thead>
+          <tbody>${attRows}</tbody></table></div></div>
+
+        <div class="mq-section"><h3 class="mq-section-title">✏️ آخر الاختبارات والأثمان المختبَرة</h3></div>
+        <div class="mq-card"><div class="rp-scroll"><table class="mq-table">
+          <thead><tr><th style="width:12%;">التاريخ</th><th style="width:12%;">النتيجة</th><th>الأثمان المختبَرة</th><th>ملاحظات</th></tr></thead>
+          <tbody>${testRows}</tbody></table></div></div>`;
+
+})();
+</script>
+</body>
+</html>

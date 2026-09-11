@@ -116,7 +116,7 @@
         const rows = students.map(s => `
             <tr>
               <td><div style="display:flex;align-items:center;gap:10px;"><span class="mq-avatar">${UI.initial(s.name)}</span>
-                <div><div style="font-weight:600;">${UI.escapeHtml(s.name)}</div>
+                <div><a href="student.html?id=${s.id}" class="mq-link-name" title="تفاصيل الطالب">${UI.escapeHtml(s.name)}</a>
                 <div style="font-size:12px;color:#9DB3A6;">${UI.escapeHtml(s.guardian_name || '')}</div></div></div></td>
               <td>${s.display_code ? `<span class="mq-code">${UI.escapeHtml(s.display_code)}</span>` : '—'}</td>
               <td>${UI.escapeHtml(s.guardian_phone || '—')}</td>
