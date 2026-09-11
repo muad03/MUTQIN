@@ -490,3 +490,50 @@ a { text-decoration:none; }
 .sd-thumn-text { font-family:var(--font-display); font-size:14.5px; color:var(--emerald-dark); line-height:1.7; }
 .sd-thumn-mistake { font-size:12px; color:var(--c-danger); }
 @media (max-width:1024px){ .sd-day-grid { grid-template-columns:1fr; } }
+
+/* ============================================================
+   صفحة «ملفّي الشخصي» للمحفّظ (pf-*) — عرض بحت، لا سلوك.
+   بطاقة تعريف (hero) + شبكة بيانات للقراءة + عمود نموذجي الهاتف وكلمة المرور.
+   الألوان من الهوية فقط: --emerald / --gold / --ivory / --c-danger ومشتقاتها.
+   ============================================================ */
+.pf-grid { display:grid; grid-template-columns:1.15fr .85fr; gap:22px; align-items:start; }
+.pf-grid > * { min-width:0; }
+
+/* بطاقة التعريف: شريط علوي ذهبي رفيع وخلفية عاجية ناعمة */
+.pf-hero { display:flex; align-items:center; gap:18px; padding:22px 24px;
+    background:linear-gradient(180deg, var(--ivory-soft), #FFFFFF);
+    border-bottom:1px solid var(--line); border-top:3px solid var(--gold);
+    border-radius:var(--radius) var(--radius) 0 0; }
+.pf-avatar { width:68px; height:68px; border-radius:18px; font-size:28px; flex:none;
+    background:var(--emerald); color:var(--ivory); box-shadow:0 10px 24px -14px rgba(4,83,47,.6); }
+.pf-hero-main { flex:1; min-width:0; }
+.pf-name-row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.pf-name { font-family:var(--font-display); font-size:27px; margin:0; color:var(--emerald-dark); line-height:1.2; }
+.pf-type { display:inline-flex; align-items:center; gap:6px; font-size:12.5px; font-weight:700; color:var(--gold-deep);
+    background:rgba(212,175,55,.16); border:1px solid rgba(212,175,55,.4); border-radius:var(--radius-pill); padding:4px 12px; margin-top:8px; }
+.pf-type::before { content:""; width:6px; height:6px; border-radius:50%; background:var(--gold); }
+
+/* شبكة البيانات للقراءة فقط */
+.pf-info { display:grid; grid-template-columns:1fr 1fr; gap:12px 14px; }
+.pf-item { background:var(--ivory-soft); border:1px solid rgba(212,175,55,.28); border-radius:13px; padding:13px 16px;
+    border-right:3px solid var(--emerald); transition:border-color .18s ease, background .18s ease; }
+.pf-item:hover { border-color:rgba(212,175,55,.6); background:#FFFFFF; }
+.pf-item-lbl { font-size:12px; color:var(--muted); font-weight:700; margin-bottom:4px; letter-spacing:.2px; }
+.pf-item-val { font-weight:700; color:var(--emerald-dark); font-size:15px; overflow-wrap:anywhere; }
+.pf-item-val--ltr { direction:ltr; text-align:right; font-size:13.5px; }
+.pf-note { display:flex; align-items:flex-start; gap:8px; font-size:12.5px; color:var(--muted); font-weight:600;
+    margin:16px 0 0; padding:10px 12px; background:rgba(4,83,47,.05); border-radius:10px; }
+.pf-note::before { content:""; flex:none; width:8px; height:8px; border-radius:50%; background:var(--gold); margin-top:6px; }
+
+/* عمود النماذج */
+.pf-forms { display:flex; flex-direction:column; gap:22px; }
+.pf-forms .mq-card-title { font-size:19px; }
+.pf-field + .pf-field { margin-top:12px; }
+.pf-input--ltr { direction:ltr; text-align:right; }
+.pf-actions { display:flex; justify-content:flex-start; margin-top:14px; }
+.pf-hint { display:flex; align-items:flex-start; gap:8px; font-size:12.5px; color:var(--gold-deep); font-weight:600;
+    margin-top:12px; padding:9px 12px; background:rgba(212,175,55,.12); border:1px solid rgba(212,175,55,.35); border-radius:10px; }
+.pf-hint::before { content:""; flex:none; width:8px; height:8px; border-radius:50%; background:var(--c-danger); margin-top:6px; }
+
+/* الحالة المؤقتة (تحميل) */
+.pf-loading { color:var(--muted); font-weight:600; padding:24px; text-align:center; }
