@@ -17,6 +17,7 @@
             ['centers',   'المراكز', 'centers', 'admin/centers.html'],
             ['supervisors', 'مدراء المراكز', 'teachers', 'admin/managers.html'],
             ['students',  'جميع الطلاب', 'students', 'admin/students.html'],
+            ['users',     'جميع المستخدمين', 'parents', 'admin/users.html'],
             ['reports',   'التقارير', 'report', 'admin/reports.html'],
         ],
         teacher: [
