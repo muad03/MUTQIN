@@ -108,6 +108,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/students/next-code', [StudentController::class, 'nextCode']); // معاينة كود الطالب التالي (لا حجز)
         Route::get('/parents/search', [StudentController::class, 'searchParents']); // بحث أولياء الأمور (لاختيار ولي موجود)
 
+        // جميع المستخدمين — عرض فقط (لا تعديل/تعطيل من هنا)
+        Route::get('/admin/users', [\App\Http\Controllers\Api\AdminUserController::class, 'index']);
+
         // إدارة مدراء المراكز (مدير واحد لكل مركز كحدّ أقصى)
         Route::get('/admin/managers', [\App\Http\Controllers\Api\ManagerManagementController::class, 'index']);
         Route::post('/admin/managers', [\App\Http\Controllers\Api\ManagerManagementController::class, 'store']);
