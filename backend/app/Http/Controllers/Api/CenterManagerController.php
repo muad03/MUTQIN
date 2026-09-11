@@ -195,6 +195,60 @@ class CenterManagerController extends Controller
     }
 
     /** تفاصيل محفّظ من مركزه فقط (نفس حمولة نافذة «تفاصيل» عند المدير). */
+    /**
+     * أولياء أمور مركزه — GET /manager/parents (عرض فقط):
+     *  - الارتباط بالمركز عبر الأبناء حصراً (لا center_id لولي الأمر): يظهر من له
+     *    ابن نشط واحد على الأقل في مركز المدير — الفلترة في الاستعلام نفسه.
+     *  - أبناؤه المعروضون: النشطون في هذا المركز فقط (لا تسريب لأبناء مراكز أخرى).
+     *  - ?status=active (افتراضي) | inactive | all — حالة حساب ولي الأمر.
+     *  - ?q= بحث موحّد: الاسم المطبَّع (ArabicText) · الكود (P5 / 5 / ٥) · الهاتف المطبَّع · الرقم الوطني.
+     *  - ترقيم 20/صفحة، والأبناء بتحميل مسبق مقيّد (استعلام واحد — لا N+1).
+     */
+    public function parents(Request $request)
+    {
+        $centerId = $request->user()->center_id;
+        $inCenter = fn ($q) => $q->where('center_id', $centerId)->where('is_active', true);
+
+        $query = User::where('role', 'parent')
+            ->whereHas('children', $inCenter)
+            ->with(['children' => fn ($q) => $inCenter($q)->select('id', 'name', 'display_code', 'parent_id')->orderBy('name')])
+            ->withCount(['children as children_in_center_count' => $inCenter])
+            ->orderBy('name');
+
+        $status = $request->input('status', 'active');
+        if ($status === 'inactive') {
+            $query->where('is_active', false);
+        } elseif ($status !== 'all') {
+            $query->where('is_active', true);
+        }
+
+        if (($q = trim((string) $request->get('q', ''))) !== '') {
+            $norm   = ArabicText::normalize($q);
+            $like   = '%' . $norm . '%';
+            $digits = strtr($q, ['٠'=>'0','١'=>'1','٢'=>'2','٣'=>'3','٤'=>'4','٥'=>'5','٦'=>'6','٧'=>'7','٨'=>'8','٩'=>'9']);
+            $code   = preg_match('/^\s*[pP]?\s*(\d+)\s*$/u', $digits, $m) ? 'P' . (int) $m[1] : null;
+            $phone  = PhoneNumber::normalize($q);
+            $idPart = preg_replace('/\D/', '', $digits);
+
+            $query->where(function ($w) use ($like, $code, $phone, $idPart) {
+                $w->whereRaw(ArabicText::sqlNormalize('name') . ' LIKE ?', [$like]);
+                if ($code) {
+                    $w->orWhere('display_code', $code); // تطابق تام: P5 لا يلتقط P50
+                }
+                if ($phone) {
+                    $w->orWhere('phone', 'like', "%{$phone}%");
+                }
+                if ($idPart !== '') {
+                    $w->orWhere('id_number', 'like', "%{$idPart}%");
+                }
+            });
+        }
+
+        $page = $query->paginate(20, ['id', 'name', 'display_code', 'phone', 'id_number', 'is_active'])->withQueryString();
+
+        return response()->json(['success' => true, 'data' => $page]);
+    }
+
     public function showTeacher(Request $request, $id)
     {
         $teacher = User::where('role', 'teacher')
