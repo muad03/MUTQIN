@@ -227,8 +227,10 @@ class CenterManagerController extends Controller
             $like   = '%' . $norm . '%';
             $digits = strtr($q, ['٠'=>'0','١'=>'1','٢'=>'2','٣'=>'3','٤'=>'4','٥'=>'5','٦'=>'6','٧'=>'7','٨'=>'8','٩'=>'9']);
             $code   = preg_match('/^\s*[pP]?\s*(\d+)\s*$/u', $digits, $m) ? 'P' . (int) $m[1] : null;
-            $phone  = PhoneNumber::normalize($q);
+            // الهاتف والرقم الوطني: عند 4 أرقام فأكثر فقط — وإلا طابق 'p1' كل هاتف/رقم يحوي 1
             $idPart = preg_replace('/\D/', '', $digits);
+            if (strlen($idPart) < 4) { $idPart = ''; }
+            $phone  = $idPart !== '' ? PhoneNumber::normalize($q) : null;
 
             $query->where(function ($w) use ($like, $code, $phone, $idPart) {
                 $w->whereRaw(ArabicText::sqlNormalize('name') . ' LIKE ?', [$like]);

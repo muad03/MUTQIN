@@ -44,7 +44,8 @@ class AdminUserController extends Controller
             $norm   = ArabicText::normalize($q);
             $like   = '%' . $norm . '%';
             $digits = strtr($q, ['٠'=>'0','١'=>'1','٢'=>'2','٣'=>'3','٤'=>'4','٥'=>'5','٦'=>'6','٧'=>'7','٨'=>'8','٩'=>'9']);
-            $phone  = PhoneNumber::normalize($q);
+            // الهاتف: عند 4 أرقام فأكثر فقط — وإلا طابق 't1' كل هاتف يحوي الرقم 1
+            $phone  = strlen(preg_replace('/\D/', '', $digits)) >= 4 ? PhoneNumber::normalize($q) : null;
 
             // الكود: بادئة + رقم (t5 = T5) تطابق تام، أو رقم مجرد يطابق أي بادئة (5 → T5/CA5/P5)
             $codeExact  = preg_match('/^\s*([a-zA-Z]{1,2})\s*(\d+)\s*$/u', $digits, $m) ? strtoupper($m[1]) . (int) $m[2] : null;
