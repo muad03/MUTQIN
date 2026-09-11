@@ -227,6 +227,115 @@ class CenterManagerController extends Controller
      * تعديل بيانات محفّظ من مركزه (لا حذف — الحذف لمدير النظام، ولا نقل مركز
      * من هنا — النقل عبر سير نقل المحفّظين). يحترم قاعدة الأساسي الواحد.
      */
+    /**
+     * صفحة تفاصيل المحفّظ وأدائه (مدير المركز) — GET /manager/teachers/{id}/performance
+     * مضيَّق بمركزه: محفّظ من مركز آخر → 403 عربية (لا تسريب لطلاب مركز آخر).
+     * استعلامات مجمّعة فقط (بلا N+1 مهما كثُر الطلاب):
+     *  - طلابه (نشطون + عدد الموقوفين) في استعلام واحد.
+     *  - حضور الشهر الحالي مجمّعاً بالطالب · اختبارات الشهر مجمّعة بالطالب ·
+     *    سور الحفظ (استعلام واحد) → تقدّم كل طالب عبر SurahReference::progress.
+     * التعريفات نفسها المعتمدة في ReportService (نسبة الحضور = حاضر ÷ الإجمالي،
+     * مؤشر الأداء = نسبة النجاح + نصف نسبة الحضور، الختمة = 30 جزءاً مكتملاً
+     * لطالب مسنَد إليه حالياً — النسبة القائمة في النظام، لا إعادة حساب).
+     */
+    public function teacherPerformance(Request $request, $id)
+    {
+        $teacher = User::where('role', 'teacher')->with('center:id,name')->findOrFail($id);
+
+        if ((int) $teacher->center_id !== (int) $request->user()->center_id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'هذا المحفّظ ليس من محفّظي مركزك',
+            ], 403);
+        }
+
+        $now = now();
+        $all = Student::where('teacher_id', $teacher->id)
+            ->orderBy('name')
+            ->get(['id', 'name', 'display_code', 'age', 'national_id', 'guardian_name', 'is_active']);
+        $students = $all->where('is_active', true)->values();
+        $ids = $students->pluck('id');
+
+        $attByStudent = Attendance::whereIn('student_id', $ids)
+            ->whereMonth('date', $now->month)->whereYear('date', $now->year)
+            ->selectRaw("student_id, COUNT(*) AS total, COALESCE(SUM(status = 'present'), 0) AS present, COALESCE(SUM(status = 'late'), 0) AS late, COALESCE(SUM(status = 'absent'), 0) AS absent")
+            ->groupBy('student_id')->get()->keyBy('student_id');
+
+        $testsByStudent = \App\Models\WeeklyTest::whereIn('student_id', $ids)
+            ->whereMonth('exam_date', $now->month)->whereYear('exam_date', $now->year)
+            ->selectRaw("student_id, COUNT(*) AS total, COALESCE(SUM(result = 'ناجح'), 0) AS passed")
+            ->groupBy('student_id')->get()->keyBy('student_id');
+
+        $surahsByStudent = \App\Models\Memorization::whereIn('student_id', $ids)
+            ->whereNotNull('surah_name')
+            ->get(['student_id', 'surah_name'])
+            ->groupBy('student_id');
+
+        $present = 0; $totalAtt = 0; $passed = 0; $totalTests = 0; $sumJuz = 0; $khatmat = 0;
+        $rows = $students->map(function ($s) use ($attByStudent, $testsByStudent, $surahsByStudent, &$present, &$totalAtt, &$passed, &$totalTests, &$sumJuz, &$khatmat) {
+            $a = $attByStudent->get($s->id);
+            $t = $testsByStudent->get($s->id);
+            $p = \App\Support\SurahReference::progress(($surahsByStudent[$s->id] ?? collect())->pluck('surah_name')->all());
+
+            $present    += (int) ($a->present ?? 0);
+            $totalAtt   += (int) ($a->total ?? 0);
+            $passed     += (int) ($t->passed ?? 0);
+            $totalTests += (int) ($t->total ?? 0);
+            $sumJuz     += $p['completed_count'];
+            if ($p['completed_count'] === 30) $khatmat++;
+
+            return [
+                'id'                 => $s->id,
+                'name'               => $s->name,
+                'display_code'       => $s->display_code,
+                'age'                => $s->age,
+                'national_id'        => $s->national_id,
+                'guardian_name'      => $s->guardian_name,
+                'is_active'          => $s->is_active,
+                'attendance_percent' => \App\Support\Percentage::of((int) ($a->present ?? 0), (int) ($a->total ?? 0)),
+                'attendance_total'   => (int) ($a->total ?? 0),
+                'tests_total'        => (int) ($t->total ?? 0),
+                'tests_passed'       => (int) ($t->passed ?? 0),
+                'completed_juz'      => $p['completed_count'],
+                'reached_juz'        => $p['reached_juz'],
+                'last_surah'         => $p['last_surah'],
+                'completed_quran'    => $p['completed_count'] === 30,
+            ];
+        })->values();
+
+        $attendancePercent = \App\Support\Percentage::of($present, $totalAtt);
+        $passRate          = \App\Support\Percentage::of($passed, $totalTests);
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'teacher' => [
+                    'id'           => $teacher->id,
+                    'name'         => $teacher->name,
+                    'display_code' => $teacher->display_code,
+                    'type'         => $teacher->type,
+                    'is_active'    => $teacher->is_active,
+                    'email'        => $teacher->email,
+                    'phone'        => $teacher->phone,
+                    'center_name'  => $teacher->center->name ?? null,
+                    'created_at'   => $teacher->created_at,
+                ],
+                'stats' => [
+                    'students_active'     => $students->count(),
+                    'students_inactive'   => $all->count() - $students->count(),
+                    'attendance_percent'  => $attendancePercent,
+                    'attendance_month'    => ['total' => $totalAtt, 'present' => $present],
+                    'tests_month'         => ['total' => $totalTests, 'passed' => $passed, 'pass_percent' => $passRate],
+                    'performance_score'   => (int) round($passRate + $attendancePercent / 2), // تعريف ReportService::teachersPerformance
+                    'avg_completed_juz'   => $students->count() ? round($sumJuz / $students->count(), 1) : 0,
+                    'khatmat'             => $khatmat,
+                    'month' => $now->month, 'year' => $now->year,
+                ],
+                'students' => $rows,
+            ],
+        ]);
+    }
+
     public function updateTeacher(Request $request, $id)
     {
         $manager = $request->user();

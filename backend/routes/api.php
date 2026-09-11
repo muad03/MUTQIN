@@ -62,6 +62,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/manager/teachers', [\App\Http\Controllers\Api\CenterManagerController::class, 'teachers']);
         Route::get('/manager/teachers/next-code', [\App\Http\Controllers\Api\CenterManagerController::class, 'teacherNextCode']); // معاينة كود المحفّظ (قبل {id})
         Route::get('/manager/teachers/{id}', [\App\Http\Controllers\Api\CenterManagerController::class, 'showTeacher']);
+        Route::get('/manager/teachers/{id}/performance', [\App\Http\Controllers\Api\CenterManagerController::class, 'teacherPerformance']); // تفاصيل المحفّظ وأداؤه وطلابه — مضيَّق بمركزه (403)
         Route::post('/manager/teachers', [\App\Http\Controllers\Api\CenterManagerController::class, 'storeTeacher']); // إضافة محفّظ — center_id/role مفروضان
         Route::put('/manager/teachers/{id}', [\App\Http\Controllers\Api\CenterManagerController::class, 'updateTeacher']); // لا حذف إطلاقاً (قرار معتمد) — البديل التفعيل/التعطيل أدناه
         Route::put('/manager/teachers/{id}/status', [\App\Http\Controllers\Api\CenterManagerController::class, 'toggleTeacherStatus']); // تفعيل/تعطيل محفّظي مركزه — مضيَّق بمركزه، والأساسي الوحيد لا يُوقَف
