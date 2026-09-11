@@ -425,3 +425,28 @@ a { text-decoration:none; }
     .rp-grid { gap:16px; }
     .rp-stack { gap:12px; }
 }
+
+/* ===== صفحة تفاصيل المركز (أدمن) — بنمط الكتل القائم mq-block-element / --modifier ===== */
+.mq-center-head { display:flex; flex-direction:column; gap:14px; }
+.mq-center-head-top { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+.mq-center-name { font-family:var(--font-display); font-size:30px; margin:0; color:var(--emerald-dark); }
+.mq-center-meta { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:10px; }
+.mq-center-meta-item { padding:11px 13px; background:var(--ivory-soft); border-radius:10px; }
+.mq-center-meta-lbl { font-size:11.5px; color:var(--muted); margin-bottom:2px; }
+.mq-center-meta-val { font-size:14px; font-weight:700; color:var(--emerald-dark); }
+.mq-stat-sub { font-size:11.5px; color:var(--faint); font-weight:600; margin-top:3px; }
+.mq-section { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin:26px 0 12px; }
+.mq-section-title { font-family:var(--font-display); font-size:22px; color:var(--emerald-dark); margin:0; }
+.mq-section-count { font-size:13px; color:var(--muted); font-weight:600; }
+.mq-manager { display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+.mq-manager-avatar { width:54px; height:54px; font-size:22px; border-radius:14px; }
+.mq-manager-info { flex:1; min-width:200px; }
+.mq-manager-name { font-size:16.5px; font-weight:700; color:var(--emerald-dark); }
+.mq-manager-mail { font-size:12.5px; color:var(--muted); direction:ltr; text-align:right; margin-top:3px; }
+.mq-manager-phone { font-size:13.5px; color:var(--emerald); font-weight:600; }
+.mq-manager-empty { background:rgba(212,175,55,.14); border:1.5px solid var(--gold); border-radius:13px; padding:15px 18px; color:var(--gold-deep); font-weight:700; }
+.mq-more { text-align:center; padding:12px 14px; border-top:1px solid var(--line); }
+@media (max-width:767.98px){
+    .mq-center-name { font-size:24px; }
+    .mq-section-title { font-size:20px; }
+}
