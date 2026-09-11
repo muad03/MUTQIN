@@ -135,6 +135,9 @@ Route::middleware('auth:sanctum')->group(function () {
         // لا حذف للطالب إطلاقاً (قرار معتمد) — الحذف كان يمحو حضوره وحفظه
         // واختباراته بـ cascade؛ بديله الإيقاف عبر /students/{id}/status
         Route::apiResource('students', StudentController::class)->except(['store', 'destroy']);
+        // صفحة تفاصيل الطالب للمحفّظ (طلابه فقط — 403) + سجلات يوم واحد ?date=Y-m-d
+        Route::get('/students/{id}/details', [StudentController::class, 'teacherDetails']);
+        Route::get('/students/{id}/day', [StudentController::class, 'teacherDay']);
 
         // مراسلة أولياء أمور طلابه — المحفّظ الفعلي للطالب حصراً (الأدمن يُرفض داخل المتحكم)
         Route::get('/teacher/messages', [\App\Http\Controllers\Api\MessageController::class, 'threads']);

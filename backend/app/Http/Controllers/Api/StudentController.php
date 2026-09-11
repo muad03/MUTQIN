@@ -357,6 +357,126 @@ class StudentController extends Controller
         ]);
     }
 
+    /**
+     * فحص ملكية المحفّظ للطالب — نفس قاعدة show(): المحفّظ يرى طلابه فقط (الأدمن يمرّ).
+     * لا توسيع لصلاحيات المحفّظ: كل ما تعيده نقطتا التفاصيل/اليوم متاح له أصلاً عبر
+     * GET /students/{id} و/memorizations/students-progress.
+     */
+    private function forbidUnlessOwnStudent(Request $request, Student $student)
+    {
+        $user = $request->user();
+        if (!$user->isAdmin() && (int) $student->teacher_id !== (int) $user->id) {
+            return response()->json(['success' => false, 'message' => 'غير مصرح لك بالوصول لهذا الطالب'], 403);
+        }
+        return null;
+    }
+
+    /**
+     * صفحة تفاصيل الطالب للمحفّظ — GET /students/{id}/details (كل السجلات):
+     * البيانات الأساسية (بلا بيانات ولي الأمر) + حضور/غياب/تأخير + اختبارات ونتائج +
+     * تقدّم الحفظ (التعريف القائم) + آخر السجلات بملاحظاتها. استعلامات مجمّعة، بلا N+1.
+     */
+    public function teacherDetails(Request $request, $id)
+    {
+        $student = Student::with('center:id,name')->findOrFail($id);
+        if ($deny = $this->forbidUnlessOwnStudent($request, $student)) {
+            return $deny;
+        }
+
+        $att = Attendance::where('student_id', $student->id)
+            ->selectRaw("COUNT(*) AS total, COALESCE(SUM(status = 'present'), 0) AS present, COALESCE(SUM(status = 'late'), 0) AS late, COALESCE(SUM(status = 'absent'), 0) AS absent")
+            ->first();
+        $tests = \App\Models\WeeklyTest::where('student_id', $student->id)
+            ->selectRaw("COUNT(*) AS total, COALESCE(SUM(result = 'ناجح'), 0) AS passed, COALESCE(SUM(result = 'راسب'), 0) AS failed")
+            ->first();
+        $quality = Memorization::where('student_id', $student->id)
+            ->selectRaw('quality, COUNT(*) AS c')->groupBy('quality')->pluck('c', 'quality');
+        $p = \App\Support\SurahReference::progress(
+            Memorization::where('student_id', $student->id)->whereNotNull('surah_name')->pluck('surah_name')->all()
+        );
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'student' => [
+                    'id' => $student->id, 'name' => $student->name, 'display_code' => $student->display_code,
+                    'age' => $student->age, 'phone' => $student->phone, 'national_id' => $student->national_id,
+                    'nationality_type' => $student->nationality_type, 'nationality_name' => $student->nationality_name,
+                    'enrollment_date' => $student->enrollment_date, 'is_active' => $student->is_active,
+                    'center_name' => $student->center->name ?? null, 'former_teacher_name' => $student->former_teacher_name,
+                ],
+                'attendance' => [
+                    'total' => (int) $att->total, 'present' => (int) $att->present,
+                    'late' => (int) $att->late, 'absent' => (int) $att->absent,
+                    'percent' => \App\Support\Percentage::of((int) $att->present, (int) $att->total),
+                ],
+                'tests' => [
+                    'total' => (int) $tests->total, 'passed' => (int) $tests->passed, 'failed' => (int) $tests->failed,
+                    'pass_percent' => \App\Support\Percentage::of((int) $tests->passed, (int) $tests->total),
+                ],
+                'progress' => [
+                    'completed_juz' => $p['completed_count'], 'completed_down_to' => $p['completed_down_to'],
+                    'completion_percent' => \App\Support\Percentage::of($p['completed_count'], 30),
+                    'reached_juz' => $p['reached_juz'], 'reached_juz_done' => $p['reached_juz_done'],
+                    'last_surah' => $p['last_surah'], 'completed_quran' => $p['completed_count'] === 30,
+                ],
+                'memorization_quality' => [
+                    'excellent' => (int) ($quality['excellent'] ?? 0), 'good' => (int) ($quality['good'] ?? 0),
+                    'average' => (int) ($quality['average'] ?? 0), 'weak' => (int) ($quality['weak'] ?? 0),
+                ],
+                'recent' => [
+                    'memorizations' => Memorization::where('student_id', $student->id)->orderByDesc('date')->orderByDesc('id')->limit(10)
+                        ->get(['id', 'date', 'surah_name', 'juz', 'page_from', 'page_to', 'eighth', 'quality', 'notes']),
+                    'attendances'   => Attendance::where('student_id', $student->id)->orderByDesc('date')->limit(10)
+                        ->get(['id', 'date', 'time', 'status', 'notes', 'corrected_at']),
+                    'tests'         => \App\Models\WeeklyTest::where('student_id', $student->id)->with('questions:id,weekly_test_id,eighth_start,result,mistake')
+                        ->orderByDesc('exam_date')->orderByDesc('id')->limit(10)->get(['id', 'exam_date', 'result', 'notes']),
+                ],
+            ],
+        ]);
+    }
+
+    /**
+     * سجلات يوم واحد للطالب — GET /students/{id}/day?date=Y-m-d
+     * الافتراضي اليوم بتوقيت التطبيق (Africa/Tripoli)، والصيغة تُتحقّق في الباك (422 عربية).
+     * يوم بلا سجلات → empty=true مع الرسالة المعتمدة حرفياً.
+     */
+    public function teacherDay(Request $request, $id)
+    {
+        $student = Student::findOrFail($id);
+        if ($deny = $this->forbidUnlessOwnStudent($request, $student)) {
+            return $deny;
+        }
+
+        $request->validate([
+            'date' => 'nullable|date_format:Y-m-d',
+        ], ['date.date_format' => 'صيغة التاريخ غير صحيحة — المطلوب Y-m-d']);
+
+        $date = $request->input('date') ?: today()->toDateString(); // today() بتوقيت Africa/Tripoli
+
+        $attendance = Attendance::where('student_id', $student->id)->whereDate('date', $date)
+            ->first(['id', 'date', 'time', 'status', 'notes', 'corrected_at']);
+        $memorizations = Memorization::where('student_id', $student->id)->whereDate('date', $date)->orderBy('id')
+            ->get(['id', 'date', 'surah_name', 'juz', 'page_from', 'page_to', 'eighth', 'quality', 'notes']);
+        $tests = \App\Models\WeeklyTest::where('student_id', $student->id)->whereDate('exam_date', $date)
+            ->with('questions:id,weekly_test_id,eighth_start,result,mistake')->orderBy('id')
+            ->get(['id', 'exam_date', 'result', 'notes']);
+
+        $empty = !$attendance && $memorizations->isEmpty() && $tests->isEmpty();
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'date'          => $date,
+                'empty'         => $empty,
+                'message'       => $empty ? 'لا توجد سجلات لهذا الطالب في هذا التاريخ.' : null,
+                'attendance'    => $attendance,
+                'memorizations' => $memorizations,
+                'tests'         => $tests,
+            ],
+        ]);
+    }
+
     public function update(Request $request, $id)
     {
         $user = $request->user();
