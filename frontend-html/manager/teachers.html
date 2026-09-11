@@ -254,7 +254,7 @@
                     <tr>
                       <td><div style="display:flex;align-items:center;gap:10px;">
                         <span class="mq-avatar">${UI.initial(t.name)}</span>
-                        <div><div style="font-weight:600;">${UI.escapeHtml(t.name)}</div>
+                        <div><a href="teacher.html?id=${t.id}" class="mq-link-name" title="تفاصيل المحفّظ وأداؤه">${UI.escapeHtml(t.name)}</a>
                         <div style="font-size:12px;color:#9DB3A6;direction:ltr;text-align:right;">${UI.escapeHtml(t.email)}</div></div></div></td>
                       <td>${t.display_code ? `<span class="mq-code">${UI.escapeHtml(t.display_code)}</span>` : '—'}</td>
                       <td>${UI.escapeHtml(t.type || '—')}</td>

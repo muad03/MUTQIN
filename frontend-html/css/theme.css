@@ -450,3 +450,7 @@ a { text-decoration:none; }
     .mq-center-name { font-size:24px; }
     .mq-section-title { font-size:20px; }
 }
+
+/* ===== اسم قابل للنقر داخل الجداول (يفتح صفحة تفاصيل) ===== */
+.mq-link-name { font-weight:600; color:var(--emerald-dark); text-decoration:none; border-bottom:1px dashed rgba(4,83,47,.35); }
+.mq-link-name:hover { color:var(--emerald); border-bottom-color:var(--emerald); }
