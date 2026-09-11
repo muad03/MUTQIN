@@ -18,7 +18,7 @@
 <script>
 (async function () {
     // الملكية تُفحص في الخادم (طلاب المحفّظ فقط → وإلا 403) — هذا توجيه للواجهة فقط
-    const user = Auth.requireAuth(['teacher', 'admin']);
+    const user = Auth.requireAuth(['teacher']);
     if (!user) return;
     const pc = Layout.mount({ user, active: 'students', title: 'تفاصيل الطالب' });
 
