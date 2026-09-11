@@ -537,3 +537,18 @@ a { text-decoration:none; }
 
 /* الحالة المؤقتة (تحميل) */
 .pf-loading { color:var(--muted); font-weight:600; padding:24px; text-align:center; }
+
+/* «ملفّي الشخصي»: تابلت ≤1024px عمود واحد بمسافات أضيق · موبايل ≤767.98px بطاقة تعريف متمركزة وشبكة بيانات بعمود واحد */
+@media (max-width:1024px){
+    .pf-grid { grid-template-columns:1fr; gap:18px; }
+    .pf-hero { padding:18px 20px; }
+    .pf-name { font-size:24px; }
+}
+@media (max-width:767.98px){
+    .pf-hero { flex-direction:column; text-align:center; gap:12px; padding:20px 16px; }
+    .pf-name-row { justify-content:center; }
+    .pf-info { grid-template-columns:1fr; gap:10px; }
+    .pf-item { padding:12px 14px; }
+    .pf-forms { gap:16px; }
+    .pf-actions .mq-btn { width:100%; }
+}
