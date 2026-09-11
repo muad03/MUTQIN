@@ -164,6 +164,38 @@ class ManagerAddStudentGuardianTest extends TestCase
         $this->assertSame(1, User::where('id_number', '199000000006')->count());
     }
 
+    /** «بدون ولي أمر»: الطالب يُحفظ بـparent_id = NULL، وأي حقول ولي أمر مرسَلة مع none تُتجاهل فلا يُنشأ حساب. */
+    public function test_student_without_guardian_is_saved_with_null_parent_and_stray_fields_are_ignored(): void
+    {
+        [, , $token] = $this->manager();
+
+        // المسار الثالث الصريح — مع حقول ولي أمر دخيلة (بلا هاتف ولا كلمة مرور، لكن الخادم يتجاهلها أصلاً)
+        $r = $this->authed($token)->postJson('/api/manager/students', [
+            'name' => 'طالب بلا ولي', 'age' => 9, 'guardian_mode' => 'none',
+            'guardian_name' => 'دخيل', 'guardian_id_number' => '199000000008', 'guardian_phone' => '0918888888',
+            'guardian_password' => 'secret123', 'guardian_email' => 'stray@x.ly',
+        ])->assertCreated();
+        $this->assertNull($r->json('data.parent_id'));
+        $this->assertNull($r->json('data.guardian_name'));
+        $this->assertSame(0, User::where('role', 'parent')->count());
+
+        // بلا أي بيانات ولي أمر إطلاقاً → أيضاً NULL (لا ربط تلقائي بأي حساب قائم)
+        $this->makeParent(['id_number' => '199000000009', 'phone' => '0919999999']);
+        $this->app['auth']->forgetGuards();
+        $r2 = $this->authed($token)->postJson('/api/manager/students', ['name' => 'طالب آخر', 'age' => 8])->assertCreated();
+        $this->assertNull($r2->json('data.parent_id'));
+
+        // ومسار الأدمن كذلك
+        $this->app['auth']->forgetGuards();
+        $r3 = $this->authed($this->loginToken($this->makeAdmin()))->postJson('/api/students', [
+            'name' => 'طالب أدمن', 'age' => 10, 'center_id' => Student::first()->center_id, 'guardian_mode' => 'none',
+            'guardian_name' => 'دخيل', 'guardian_phone' => '0917777777', 'guardian_password' => 'secret123',
+        ])->assertCreated();
+        $this->assertNull($r3->json('data.parent_id'));
+        $this->assertSame(1, User::where('role', 'parent')->count()); // الحساب القائم فقط — لا جديد
+        $this->assertSame(3, Student::whereNull('parent_id')->count());
+    }
+
     public function test_parent_search_by_id_number_returns_minimal_fields_and_is_manager_only(): void
     {
         [$center, , $token] = $this->manager();
