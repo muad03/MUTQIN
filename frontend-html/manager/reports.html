@@ -62,11 +62,23 @@
             <div class="mq-card-body" id="center-body">جارٍ التحميل...</div>
           </section>
 
+          <section class="mq-card" id="sec-teacher">
+            <div class="mq-card-header"><h3 class="mq-card-title">👨‍🏫 تقارير المحفّظين</h3>
+              <button class="mq-btn mq-btn--secondary mq-btn--sm" id="pdf-teachers">${UI.ic('report',15)} PDF أداء المحفّظين</button></div>
+            <div class="mq-card-body">
+              <div class="rp-pick">
+                <label class="mq-label" for="teacher-pick">اختر محفّظاً</label>
+                <select class="mq-input" id="teacher-pick"><option value="">— اختر —</option></select>
+              </div>
+              <div id="teacher-body" class="rp-result"></div>
+            </div>
+          </section>
 
         </div>`;
 
     el('pdf-center').onclick  = () => UI.openPdf('/manager/reports/center/pdf?' + curPeriod);
     el('pdf-atrisk').onclick  = () => UI.openPdf('/manager/reports/at-risk/pdf?' + curPeriod);
+    el('pdf-teachers').onclick = () => UI.openPdf('/manager/reports/teachers/pdf?' + curPeriod);
 
     // ===== 1) تقرير المركز — كل السجلات، النشطون فقط =====
     async function loadCenter() {
@@ -101,7 +113,55 @@
               <tbody>${riskRows}</tbody></table></div>` : ''}`;
     }
 
+    // ===== 2) تقارير المحفّظين — دروب داون ثم التقرير =====
+    async function initTeachers() {
+        const sel = el('teacher-pick');
+        try {
+            const list = (await API.get('/manager/teachers?all=1&status=active')).data || [];
+            sel.innerHTML = '<option value="">— اختر —</option>' + list.map(t =>
+                `<option value="${t.id}">${esc(t.name)}${t.display_code ? ' (' + esc(t.display_code) + ')' : ''}</option>`).join('');
+            if (!list.length) el('teacher-body').innerHTML = '<div class="rp-section-sub">لا يوجد محفّظون نشطون في مركزك</div>';
+        } catch (e) { el('teacher-body').innerHTML = `<div class="mq-empty">${esc(e.message)}</div>`; }
+        sel.onchange = () => sel.value ? loadTeacher(sel.value) : (el('teacher-body').innerHTML = '');
+    }
+
+    async function loadTeacher(id) {
+        const box = el('teacher-body');
+        box.innerHTML = 'جارٍ التحميل...';
+        let d;
+        try { d = (await API.get('/manager/reports/teacher/' + encodeURIComponent(id))).data; }
+        catch (e) { box.innerHTML = `<div class="mq-empty">${esc(e.message)}</div>`; return; }
+        const t = d.teacher || {};
+        const rows = (d.students || []).length ? d.students.map(s => `<tr>
+              <td>${s.display_code ? `<span class="mq-code">${esc(s.display_code)}</span>` : '—'}</td>
+              <td style="font-weight:600;">${esc(s.name)}</td>
+              <td style="text-align:center;font-weight:700;color:${pctColor(s.attendance_percent)};">${s.attendance_total ? s.attendance_percent + '%' : '—'}</td>
+              <td style="text-align:center;">${s.absent}</td>
+              <td style="text-align:center;">${s.tests_total ? `${s.tests_passed} / ${s.tests_total} (${s.pass_percent}%)` : '—'}</td>
+              <td>${s.completed_quran ? UI.badge('ختمة كاملة', 'success') : `<strong style="color:#04532F;">${s.completed_juz}</strong> <span style="font-size:12px;color:#7A8F82;">جزءاً${s.reached_juz ? ' · الجزء الحالي ' + s.reached_juz : ''}</span>`}</td>
+            </tr>`).join('')
+            : `<tr><td colspan="6" style="text-align:center;color:#9DB3A6;padding:18px;">لا يوجد طلاب مسجلون</td></tr>`;
+
+        box.innerHTML = `
+            <div class="mq-center-head-top" style="margin-bottom:14px;">
+              <span class="mq-avatar">${UI.initial(t.name)}</span>
+              <strong style="font-size:17px;color:#04361F;">${esc(t.name)}</strong>
+              ${t.display_code ? `<span class="mq-code">${esc(t.display_code)}</span>` : ''}
+              ${t.type === 'محفظ أساسي' ? UI.badge('محفظ أساسي', 'success') : UI.badge('محفظ معاون', 'secondary')}
+              ${t.is_active ? '' : UI.badge('موقوف', 'danger')}
+            </div>
+            <div class="mq-stats">
+              ${stat(d.students_count, 'طلابه النشطون', 'green')}
+              ${commonStats(d)}
+            </div>
+            <div class="rp-quality"><span class="rp-quality-lbl">جودة سجلات الحفظ:</span>${qualityChips(d.memorization?.quality)}</div>
+            <div class="rp-scroll"><table class="mq-table">
+              <thead><tr><th style="width:75px;">الكود</th><th>الطالب</th><th style="text-align:center;">الحضور</th><th style="text-align:center;">الغياب</th><th style="text-align:center;">الاختبارات</th><th>الحفظ</th></tr></thead>
+              <tbody>${rows}</tbody></table></div>`;
+    }
+
     loadCenter();
+    initTeachers();
 })();
 </script>
 </body>
