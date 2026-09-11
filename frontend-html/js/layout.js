@@ -19,6 +19,7 @@
             ['students',  'جميع الطلاب', 'students', 'admin/students.html'],
             ['users',     'جميع المستخدمين', 'parents', 'admin/users.html'],
             ['reports',   'التقارير', 'report', 'admin/reports.html'],
+            ['profile',   'ملفّي الشخصي', 'teachers', 'admin/profile.html'], // آخر القائمة — لا يمسّ شريط الهاتف السفلي (أول 4)
         ],
         teacher: [
             ['dashboard',   'الرئيسية', 'home', 'teacher/dashboard.html'],
