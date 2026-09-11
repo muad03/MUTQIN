@@ -126,6 +126,22 @@ class SurahReference
             self::$normToName[$norm]  = $name;
             self::$juzToNorms[$juz][] = $norm;
         }
+
+        // الأجزاء التي لا تبدأ فيها أي سورة (بالخريطة القياسية: 2 داخل البقرة، 5 داخل
+        // النساء) تتبع السورة الممتدة إليها = آخر سورة بدأت قبلها. الاستنتاج عام من
+        // الخريطة نفسها لا بأرقام ثابتة، فلا يعود الخلل إن عُدّلت الخريطة لاحقاً.
+        for ($j = 1; $j <= 30; $j++) {
+            if (!empty(self::$juzToNorms[$j])) {
+                continue;
+            }
+            for ($prev = $j - 1; $prev >= 1; $prev--) {
+                if (!empty(self::$juzToNorms[$prev])) {
+                    // آخر سورة في الجزء السابق بترتيب المصحف هي الممتدة إلى هذا الجزء
+                    self::$juzToNorms[$j] = [end(self::$juzToNorms[$prev])];
+                    break;
+                }
+            }
+        }
     }
 
     /**
@@ -190,19 +206,22 @@ class SurahReference
         ];
     }
 
-    /** أسماء سور الجزء $juz (بالصيغة الأصلية، بترتيب المصحف) — لفلترة سجلات الحفظ. */
+    /**
+     * أسماء سور الجزء $juz (بالصيغة الأصلية، بترتيب المصحف) — لفلترة سجلات الحفظ.
+     * الجزء الخالي من سور البدء يعيد سورته الممتدة (2 → البقرة، 5 → النساء).
+     */
     public static function namesOfJuz(int $juz): array
     {
-        $names = [];
-        foreach (self::SURAHS as $name => $j) {
-            if ($j === $juz) {
-                $names[] = $name;
-            }
-        }
-        return $names;
+        self::build();
+
+        return array_map(fn ($norm) => self::$normToName[$norm], self::$juzToNorms[$juz] ?? []);
     }
 
-    /** هل كل سور الجزء $juz موجودة في المجموعة المطبّعة $set؟ */
+    /**
+     * هل كل سور الجزء $juz موجودة في المجموعة المطبّعة $set؟
+     * بعد build() لكل جزء 1..30 سورة واحدة على الأقل (الممتدة إليه إن لم تبدأ فيه
+     * سورة)، فالحارس أدناه لأرقام خارج النطاق فقط.
+     */
     private static function isJuzComplete(int $juz, array $set): bool
     {
         self::build();
