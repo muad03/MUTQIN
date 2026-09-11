@@ -132,14 +132,35 @@ class MemorizationController extends Controller
             // فيسقط السجل من حساب التقدّم (المبني على مطابقة الاسم)
             'surah_name'  => ['required', 'string', \Illuminate\Validation\Rule::in(array_keys(\App\Support\SurahReference::SURAHS))],
             'juz'         => 'nullable|integer|between:1,30',
+            // الصفحات: المصحف 604 صفحات، والنهاية لا تسبق البداية
+            'page_from'   => 'nullable|integer|between:1,604',
+            'page_to'     => 'nullable|integer|between:1,604|gte:page_from',
             'quality'     => 'required|in:excellent,good,average,weak',
         ], [
             'student_id.required' => 'اختر الطالب',
             'surah_name.required' => 'اختر السورة',
             'surah_name.in'       => 'اسم السورة غير معروف — اختر سورة من القائمة',
+            'juz.integer'         => 'رقم الجزء يجب أن يكون عدداً صحيحاً',
             'juz.between'         => 'رقم الجزء يجب أن يكون بين 1 و30',
+            'page_from.integer'   => 'رقم الصفحة يجب أن يكون عدداً صحيحاً',
+            'page_from.between'   => 'صفحة البداية يجب أن تكون بين 1 و604',
+            'page_to.integer'     => 'رقم الصفحة يجب أن يكون عدداً صحيحاً',
+            'page_to.between'     => 'صفحة النهاية يجب أن تكون بين 1 و604',
+            'page_to.gte'         => 'صفحة النهاية لا يمكن أن تسبق صفحة البداية',
             'quality.required'    => 'اختر تقييم الجودة',
         ]);
+
+        // الجزء المدخل يجب أن يقع ضمن مدى السورة (مثلاً الناس = 30 فقط، البقرة 1..3)
+        if ($request->filled('juz')) {
+            [$from, $to] = \App\Support\SurahReference::juzRangeOf($request->surah_name);
+            if ((int) $request->juz < $from || (int) $request->juz > $to) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'juz' => [$from === $to
+                        ? "سورة {$request->surah_name} في الجزء {$from} — لا يمكن تسجيلها في الجزء {$request->juz}"
+                        : "سورة {$request->surah_name} تمتد من الجزء {$from} إلى {$to} — لا يمكن تسجيلها في الجزء {$request->juz}"],
+                ]);
+            }
+        }
 
         $student = Student::findOrFail($request->student_id);
 

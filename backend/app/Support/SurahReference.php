@@ -207,6 +207,24 @@ class SurahReference
     }
 
     /**
+     * مدى الأجزاء التي تمتد فيها السورة [من، إلى] — مشتق من الخريطة: يبدأ بجزء بدايتها
+     * وينتهي بجزء بداية السورة التالية في ترتيب المصحف (البقرة 1..3، النساء 4..6،
+     * الناس 30..30). null لاسم غير معروف. يُستخدم للتحقق من أن الجزء المدخل يخص السورة.
+     */
+    public static function juzRangeOf(string $surahName): ?array
+    {
+        $names = array_keys(self::SURAHS);
+        $idx = array_search($surahName, $names, true);
+        if ($idx === false) {
+            return null;
+        }
+        $from = self::SURAHS[$surahName];
+        $to   = isset($names[$idx + 1]) ? self::SURAHS[$names[$idx + 1]] : 30;
+
+        return [$from, max($from, $to)];
+    }
+
+    /**
      * أسماء سور الجزء $juz (بالصيغة الأصلية، بترتيب المصحف) — لفلترة سجلات الحفظ.
      * الجزء الخالي من سور البدء يعيد سورته الممتدة (2 → البقرة، 5 → النساء).
      */
