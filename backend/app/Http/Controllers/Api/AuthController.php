@@ -18,19 +18,23 @@ class AuthController extends Controller
      */
     public function login(Request $request)
     {
+        // الحقل «email» يقبل البريد أو كود الدخول (T1 / CA1 / P1) — الاسم بقي كما هو
+        // حفاظاً على عقد الواجهة ومفاتيح الأخطاء.
         $request->validate([
-            'email'    => 'required|email',
+            'email'    => 'required|string|max:255',
             'password' => 'required|min:6',
         ], [
-            'email.required'    => 'البريد الإلكتروني مطلوب',
-            'email.email'       => 'البريد الإلكتروني غير صحيح',
+            'email.required'    => 'البريد الإلكتروني أو كود الدخول مطلوب',
             'password.required' => 'كلمة المرور مطلوبة',
             'password.min'      => 'كلمة المرور يجب أن تكون 6 أحرف على الأقل',
         ]);
 
         // تحقّق صريح بلا حارس جلسات: هذا API عديم الحالة (توكنات)، وAuth::attempt
         // يعتمد على الحارس الافتراضي القابل للتبدّل — مصدر هشاشة خفيّة.
-        $user = User::where('email', $request->email)->first();
+        // الترتيب: كود الدخول أولاً (غير حساس لحالة الأحرف: p1 = P1) ثم البريد.
+        $login = trim((string) $request->email);
+        $user  = User::whereRaw('UPPER(display_code) = ?', [mb_strtoupper($login)])->first()
+              ?? User::where('email', $login)->first();
 
         if ($user && Hash::check($request->password, $user->password)) {
             // الحساب المعطَّل يُمنع من الدخول (بديل الحذف — التاريخ يبقى محفوظاً).
@@ -69,11 +73,12 @@ class AuthController extends Controller
             ]);
         }
 
+        // رسالة موحّدة لا تكشف أيّ الحقلين خاطئ (بريد/كود غير موجود أو كلمة مرور خاطئة)
         return response()->json([
             'success' => false,
-            'message' => 'البريد الإلكتروني أو كلمة المرور غير صحيحة',
+            'message' => 'بيانات الدخول غير صحيحة',
             'errors' => [
-                'email' => ['البريد الإلكتروني أو كلمة المرور غير صحيحة']
+                'email' => ['بيانات الدخول غير صحيحة']
             ]
         ], 422);
     }
