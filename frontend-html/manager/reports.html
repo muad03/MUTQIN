@@ -74,6 +74,19 @@
             </div>
           </section>
 
+          <section class="mq-card" id="sec-student">
+            <div class="mq-card-header"><h3 class="mq-card-title">🎓 تقارير الطلاب</h3></div>
+            <div class="mq-card-body">
+              <div class="rp-pick">
+                <label class="mq-label" for="student-search">ابحث عن طالب</label>
+                <div class="rp-dd-wrap">
+                  <div class="mq-search" style="max-width:none;">${UI.ic('search', 17, '#9A7A1E')}<input id="student-search" autocomplete="off" placeholder="الاسم أو الكود أو الرقم الوطني أو الهاتف..."></div>
+                  <div class="rp-dd" id="student-dd" hidden></div>
+                </div>
+              </div>
+              <div id="student-body" class="rp-result"></div>
+            </div>
+          </section>
         </div>`;
 
     el('pdf-center').onclick  = () => UI.openPdf('/manager/reports/center/pdf?' + curPeriod);
@@ -160,8 +173,96 @@
               <tbody>${rows}</tbody></table></div>`;
     }
 
+    // ===== 3) تقارير الطلاب — بحث حيّ (debounce 300ms، التطبيع في الخادم) ثم التقرير الشامل =====
+    function initStudentSearch() {
+        const inp = el('student-search'), dd = el('student-dd');
+        let timer = null, last = 0;
+        inp.addEventListener('input', () => {
+            clearTimeout(timer);
+            const q = inp.value.trim();
+            if (q.length < 2) { dd.hidden = true; return; }
+            timer = setTimeout(async () => {
+                const rid = ++last;
+                try {
+                    const res = await API.get('/manager/students?q=' + encodeURIComponent(q));
+                    if (rid !== last) return;
+                    const items = res.data.data || [];
+                    dd.innerHTML = items.length ? items.map((s, i) => `
+                        <div class="rp-dd-item" data-i="${i}">
+                          <div class="rp-dd-name">${esc(s.name)} ${s.display_code ? `<span class="mq-code">${esc(s.display_code)}</span>` : ''}</div>
+                          <div class="rp-dd-sub">${esc(s.teacher?.name || 'بدون محفّظ')}${s.national_id ? ' · ' + esc(s.national_id) : ''}</div>
+                        </div>`).join('')
+                        : '<div class="rp-dd-empty">لا يوجد طالب مطابق</div>';
+                    dd.querySelectorAll('.rp-dd-item').forEach(it => it.onmousedown = (e) => {
+                        e.preventDefault();
+                        const s = items[+it.dataset.i];
+                        inp.value = s.name; dd.hidden = true;
+                        loadStudent(s.id);
+                    });
+                    dd.hidden = false;
+                } catch (e) { dd.hidden = true; }
+            }, 300);
+        });
+        inp.addEventListener('blur', () => setTimeout(() => dd.hidden = true, 150));
+        inp.addEventListener('focus', () => { if (dd.innerHTML && inp.value.trim().length >= 2) dd.hidden = false; });
+    }
+
+    async function loadStudent(id) {
+        const box = el('student-body');
+        box.innerHTML = 'جارٍ التحميل...';
+        let d;
+        try { d = (await API.get('/manager/reports/student/' + encodeURIComponent(id))).data; }
+        catch (e) { box.innerHTML = `<div class="mq-empty">${esc(e.message)}</div>`; return; }
+        const s = d.student || {}, t = d.teacher, p = d.parent || {}, pr = d.progress || {};
+        const natLabel = s.nationality_type === 'foreigner' ? ('أجنبي' + (s.nationality_name ? ' — ' + s.nationality_name : '')) : 'ليبي';
+
+        const testRows = (d.recent_tests || []).length ? d.recent_tests.map(x => `<tr>
+              <td>${UI.fmtDate(x.exam_date)}</td>
+              <td>${x.result === 'ناجح' ? UI.badge('ناجح', 'success') : UI.badge('راسب', 'danger')}</td>
+              <td style="color:#7A8F82;">${esc(x.notes || '—')}</td></tr>`).join('')
+            : '<tr><td colspan="3" style="text-align:center;color:#9DB3A6;padding:14px;">لا اختبارات مسجّلة</td></tr>';
+        const memoRows = (d.recent_memorizations || []).length ? d.recent_memorizations.map(x => `<tr>
+              <td>${UI.fmtDate(x.date)}</td>
+              <td style="font-weight:600;">${esc(x.surah_name)}</td>
+              <td style="text-align:center;">${x.juz ?? '—'}</td>
+              <td>${QUALITY[x.quality] ? UI.badge(QUALITY[x.quality][0], QUALITY[x.quality][1]) : esc(x.quality || '—')}</td></tr>`).join('')
+            : '<tr><td colspan="4" style="text-align:center;color:#9DB3A6;padding:14px;">لا سجلات حفظ</td></tr>';
+
+        box.innerHTML = `
+            <div class="mq-center-head-top" style="margin-bottom:12px;">
+              <span class="mq-avatar">${UI.initial(s.name)}</span>
+              <strong style="font-size:17px;color:#04361F;">${esc(s.name)}</strong>
+              ${s.display_code ? `<span class="mq-code">${esc(s.display_code)}</span>` : ''}
+              ${s.is_active ? UI.badge('نشط', 'success') : UI.badge('موقوف', 'danger')}
+            </div>
+            <div class="mq-center-meta" style="margin-bottom:16px;">
+              ${info('🎂 العمر', s.age)}${info('🪪 الرقم الوطني', s.national_id)}${info('🌍 الجنسية', natLabel)}
+              ${info('📞 هاتف الطالب', s.phone)}${info('📅 تاريخ التسجيل', s.enrollment_date ? UI.fmtDate(s.enrollment_date) : null)}${info('🏫 المركز', s.center_name)}
+              ${info('🧑‍🏫 المحفّظ', t ? t.name + (t.display_code ? ' (' + t.display_code + ')' : '') : (s.former_teacher_name ? 'بدون محفّظ — سابقاً: ' + s.former_teacher_name : 'بدون محفّظ'))}
+              ${info('👤 ولي الأمر', p.name)}${info('📱 هاتف ولي الأمر', p.phone)}
+            </div>
+            <div class="mq-stats">
+              ${stat(`${pr.completed_juz} / 30`, 'مقدار القرآن المُتمّ', 'gold', `${pr.completion_percent}% من الأجزاء — متّصلة من 30 نزولاً${pr.completed_down_to ? ' حتى ' + pr.completed_down_to : ''}`)}
+              ${stat(pr.reached_juz ?? '—', 'الجزء الحالي', 'blue', pr.reached_juz ? (pr.reached_juz_done ? 'مكتمل' : 'قيد الحفظ') + (pr.last_surah ? ' · آخر سورة: ' + esc(pr.last_surah) : '') : 'لا سجلات حفظ بعد')}
+              ${stat(pr.khatmat, 'الختمات', pr.khatmat ? 'gold' : 'green', pr.completed_quran ? 'أتمّ القرآن كاملاً' : 'لم يُتمّ بعد')}
+              ${commonStats(d, { single: true })}
+            </div>
+            <div class="rp-quality"><span class="rp-quality-lbl">جودة سجلات الحفظ:</span>${qualityChips(d.memorization?.quality)}</div>
+            <div class="rp-grid" style="margin-top:6px;">
+              <div>
+                <div class="mq-section" style="margin-top:8px;"><h3 class="mq-section-title" style="font-size:18px;">📝 آخر الاختبارات</h3></div>
+                <div class="rp-scroll"><table class="mq-table"><thead><tr><th>التاريخ</th><th>النتيجة</th><th>ملاحظات</th></tr></thead><tbody>${testRows}</tbody></table></div>
+              </div>
+              <div>
+                <div class="mq-section" style="margin-top:8px;"><h3 class="mq-section-title" style="font-size:18px;">📖 آخر سجلات الحفظ</h3></div>
+                <div class="rp-scroll"><table class="mq-table"><thead><tr><th>التاريخ</th><th>السورة</th><th style="text-align:center;">الجزء</th><th>الجودة</th></tr></thead><tbody>${memoRows}</tbody></table></div>
+              </div>
+            </div>`;
+    }
+
     loadCenter();
     initTeachers();
+    initStudentSearch();
 })();
 </script>
 </body>
