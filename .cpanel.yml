@@ -1,0 +1,7 @@
+---
+deployment:
+  tasks:
+    - export DEPLOYPATH=/home/mutqinly/public_html
+    - /usr/bin/rsync -a --delete --exclude='backend' --exclude='.well-known' --exclude='cgi-bin' frontend-html/ $DEPLOYPATH/
+    - /usr/bin/rsync -a --delete --exclude='vendor' --exclude='.env' --exclude='storage' --exclude='bootstrap/cache' backend/ $DEPLOYPATH/backend/
+    - /bin/rm -f $DEPLOYPATH/backend/bootstrap/cache/*.php
