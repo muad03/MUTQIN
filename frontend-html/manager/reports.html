@@ -17,149 +17,91 @@
 <script src="../js/layout.js"></script>
 <script>
 (function () {
+    // النطاق يُفرض في الخادم (بوابة manager + تضييق المركز داخل المتحكم) — لا فلترة هنا
     const user = Auth.requireAuth(['center_manager']);
     if (!user) return;
     const pc = Layout.mount({ user, active: 'reports', title: 'تقارير مركزي' });
 
+    const esc = UI.escapeHtml;
+    const el = id => document.getElementById(id);
     const now = new Date();
-    const MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+    const curPeriod = `month=${now.getMonth() + 1}&year=${now.getFullYear()}`; // للـPDF والمتعثّرين القائمين (شهريان)
+
+    // ===== مكوّنات صغيرة =====
+    const stat = (v, l, k, sub = '') => `<div class="mq-stat ${k || ''}"><span class="mq-stat-ico">${UI.star(22)}</span>
+        <div><div class="mq-stat-val">${v}</div><div class="mq-stat-lbl">${l}</div>${sub ? `<div class="mq-stat-sub">${sub}</div>` : ''}</div></div>`;
+    const info = (lbl, val) => `<div class="mq-center-meta-item">
+        <div class="mq-center-meta-lbl">${lbl}</div>
+        <div class="mq-center-meta-val">${esc(val ?? '—')}</div></div>`;
+    const QUALITY = { excellent: ['ممتاز', 'success'], good: ['جيد', 'primary'], average: ['مقبول', 'warning'], weak: ['ضعيف', 'danger'] };
+    const qualityChips = q => Object.keys(QUALITY).map(k => `<span class="mq-badge mq-badge-${QUALITY[k][1]}">${QUALITY[k][0]}: ${q?.[k] ?? 0}</span>`).join('');
+    const pctColor = p => p < 70 ? '#B23A48' : '#04532F';
+
+    // بطاقات الحضور/الاختبارات/الحفظ المشتركة بين الأقسام الثلاثة (نفس المفاتيح من الخادم)
+    // opts.single: تقرير طالب واحد — بطاقتا المتوسط والختمات تُعرضان في قسم التقدّم الخاص به
+    function commonStats(d, opts = {}) {
+        const a = d.attendance || {}, t = d.tests || {}, m = d.memorization || {};
+        return `
+            ${stat(a.percent + '%', 'نسبة الحضور', 'blue', `حاضر ${a.present} من ${a.total} سجلاً`)}
+            ${stat(a.absent, 'عدد الغياب', 'red', `متأخر ${a.late}`)}
+            ${stat(a.absent_percent + '%', 'نسبة الغياب', 'red')}
+            ${stat(`${t.passed} / ${t.total}`, 'نتائج الاختبارات (ناجح / الكل)', 'gold', `راسب ${t.failed}`)}
+            ${stat(t.pass_percent + '%', 'نسبة الناجحين', 'gold')}
+            ${opts.single ? '' : stat(m.avg_completed_juz, 'متوسّط الأجزاء المكتملة', 'blue', `${m.records} سجل حفظ`)}
+            ${opts.single ? '' : stat(m.khatmat, 'الختمات', m.khatmat ? 'gold' : 'green', 'أتمّوا 30 جزءاً')}`;
+    }
 
     pc.innerHTML = `
-        <div class="mq-card" style="margin-bottom:22px;"><div class="mq-card-body">
-          <div class="rp-period">
-            <div><label class="rp-lbl">الشهر</label>
-              <select id="p-month" class="mq-input">${MONTHS.map((m,i)=>`<option value="${i+1}" ${i+1===now.getMonth()+1?'selected':''}>${m}</option>`).join('')}</select></div>
-            <div><label class="rp-lbl">السنة</label>
-              <select id="p-year" class="mq-input">${[0,1,2].map(k=>{const y=now.getFullYear()-k; return `<option value="${y}">${y}</option>`}).join('')}</select></div>
-            <button class="mq-btn mq-btn--primary mq-btn--sm" id="p-go">عرض</button>
-          </div>
-        </div></div>
-
-        <!-- القسمان جنباً إلى جنب على سطح المكتب، عمودياً على ≤1024px -->
-        <div class="rp-grid">
-          <section>
-            <h2 class="rp-section-title">📊 تقارير النظام — مركزي</h2>
-            <p class="rp-section-sub">التقارير العامة مقيّدة على مركزك: الحضور والتقدّم والمتعثّرون.</p>
-            <div id="g1"><div class="mq-card"><div class="mq-card-body">جارٍ التحميل...</div></div></div>
+        <div class="rp-stack">
+          <section class="mq-card" id="sec-center">
+            <div class="mq-card-header"><h3 class="mq-card-title">📊 تقرير المركز</h3>
+              <div class="rp-actions">
+                <button class="mq-btn mq-btn--secondary mq-btn--sm" id="pdf-center">${UI.ic('report',15)} PDF الشامل</button>
+                <button class="mq-btn mq-btn--secondary mq-btn--sm" id="pdf-atrisk">${UI.ic('report',15)} PDF المتعثّرين</button>
+              </div></div>
+            <div class="mq-card-body" id="center-body">جارٍ التحميل...</div>
           </section>
-          <section id="g2-wrap"></section>
+
+
         </div>`;
 
-    const el = id => document.getElementById(id);
-    const my = () => `month=${el('p-month').value}&year=${el('p-year').value}`;
+    el('pdf-center').onclick  = () => UI.openPdf('/manager/reports/center/pdf?' + curPeriod);
+    el('pdf-atrisk').onclick  = () => UI.openPdf('/manager/reports/at-risk/pdf?' + curPeriod);
 
-    function statCard(val, label, kind) {
-        return `<div class="mq-stat ${kind || ''}"><span class="mq-stat-ico">${UI.star(22)}</span>
-            <div><div class="mq-stat-val">${val}</div><div class="mq-stat-lbl">${label}</div></div></div>`;
-    }
+    // ===== 1) تقرير المركز — كل السجلات، النشطون فقط =====
+    async function loadCenter() {
+        const box = el('center-body');
+        let d, risk = null;
+        try { d = (await API.get('/manager/reports/center')).data; }
+        catch (e) { box.innerHTML = `<div class="mq-empty">${esc(e.message)}</div>`; return; }
+        try { risk = (await API.get('/manager/reports/system?' + curPeriod)).data.atRisk; } catch (e) { risk = null; }
 
-    async function loadGroup1() {
-        el('g1').innerHTML = `<div class="mq-card"><div class="mq-card-body">جارٍ التحميل...</div></div>`;
-        let d;
-        try { d = (await API.get('/manager/reports/system?' + my())).data; }
-        catch (e) { el('g1').innerHTML = `<div class="mq-empty">${UI.escapeHtml(e.message)}</div>`; return; }
-
-        const s = d.summary, pr = d.progress, risk = d.atRisk.rows || [];
-        const riskRows = risk.length ? risk.map(r => `<tr>
-              <td>${r.student.display_code ? `<span class="mq-code">${UI.escapeHtml(r.student.display_code)}</span>` : '—'}</td>
-              <td style="font-weight:600;">${UI.escapeHtml(r.student.name)}</td>
-              <td>${UI.escapeHtml(r.student.teacher?.name || '— بدون محفّظ —')}</td>
-              <td style="text-align:center;font-weight:700;color:${r.attendancePercent<70?'#B23A48':'#04532F'};">${r.attendancePercent}%</td>
+        const riskRows = risk ? ((risk.rows || []).length ? risk.rows.map(r => `<tr>
+              <td>${r.student.display_code ? `<span class="mq-code">${esc(r.student.display_code)}</span>` : '—'}</td>
+              <td style="font-weight:600;">${esc(r.student.name)}</td>
+              <td>${esc(r.student.teacher?.name || '— بدون محفّظ —')}</td>
+              <td style="text-align:center;font-weight:700;color:${pctColor(r.attendancePercent)};">${r.attendancePercent}%</td>
               <td style="text-align:center;">${r.fails}</td>
               <td>${UI.badge(r.reason, 'warning')}</td></tr>`).join('')
-            : `<tr><td colspan="6" style="text-align:center;color:#04532F;padding:20px;">✓ لا يوجد طلاب متعثّرون</td></tr>`;
+            : `<tr><td colspan="6" style="text-align:center;color:#04532F;padding:18px;">✓ لا يوجد طلاب متعثّرون هذا الشهر</td></tr>`) : '';
 
-        el('g1').innerHTML = `
-          <div class="rp-stack">
+        box.innerHTML = `
+            <div class="rp-section-sub" style="margin-bottom:14px;">${esc(d.center?.name || '')} · كل السجلات · الطلاب والمحفّظون النشطون فقط</div>
             <div class="mq-stats">
-              ${statCard(s.studentsCount, 'الطلاب', 'green')}
-              ${statCard(s.teachersCount, 'المحفّظون', 'gold')}
-              ${statCard(s.avgAttendance + '%', 'متوسّط الحضور', 'blue')}
-              ${statCard(s.passRate + '%', 'نسبة النجاح', 'green')}
-              ${statCard(pr.completedQuran, 'أكملوا القرآن', 'gold')}
-              ${statCard(pr.avgCompletedJuz, 'متوسّط الأجزاء المكتملة', 'blue')}
+              ${stat(d.students_count, 'عدد الطلاب', 'green')}
+              ${stat(d.teachers_count, 'عدد المحفّظين', 'gold')}
+              ${commonStats(d)}
             </div>
-
-            <div class="mq-card">
-              <div class="mq-card-header"><h3 class="mq-card-title">⚠️ الطلاب المتعثّرون (${risk.length})</h3>
-                <button class="mq-btn mq-btn--secondary mq-btn--sm" id="pdf-atrisk">${UI.ic('report',15)} PDF</button></div>
-              <div class="rp-scroll"><table class="mq-table">
-                <thead><tr><th>الكود</th><th>الطالب</th><th>المحفّظ</th><th style="text-align:center;">الحضور</th><th style="text-align:center;">مرات الرسوب</th><th>السبب</th></tr></thead>
-                <tbody>${riskRows}</tbody></table></div>
-            </div>
-
-            <div class="rp-actions">
-              <button class="mq-btn mq-btn--gold mq-btn--sm" id="pdf-center">${UI.ic('report',15)} تقرير المركز الشامل (PDF)</button>
-            </div>
-          </div>`;
-
-        el('pdf-atrisk').onclick = () => UI.openPdf('/manager/reports/at-risk/pdf?' + my());
-        el('pdf-center').onclick = () => UI.openPdf('/manager/reports/center/pdf?' + my());
+            <div class="rp-quality"><span class="rp-quality-lbl">جودة سجلات الحفظ:</span>${qualityChips(d.memorization?.quality)}</div>
+            ${risk ? `
+            <div class="mq-section"><h3 class="mq-section-title">⚠️ الطلاب المتعثّرون (الشهر الحالي)</h3>
+              <span class="mq-section-count">حضور أقل من ${risk.attThreshold}% أو رسوب ${risk.failThreshold} مرات فأكثر</span></div>
+            <div class="rp-scroll"><table class="mq-table">
+              <thead><tr><th>الكود</th><th>الطالب</th><th>المحفّظ</th><th style="text-align:center;">الحضور</th><th style="text-align:center;">مرات الرسوب</th><th>السبب</th></tr></thead>
+              <tbody>${riskRows}</tbody></table></div>` : ''}`;
     }
 
-    async function loadGroup2() {
-        const wrap = el('g2-wrap');
-        wrap.innerHTML = `
-            <h2 class="rp-section-title">🏫 تقارير إدارة المركز</h2>
-            <p class="rp-section-sub">أداء المحفّظين وتوزيع الطلاب لإدارة مركزك.</p>
-            <div id="g2"><div class="mq-card"><div class="mq-card-body">جارٍ التحميل...</div></div></div>`;
-        let d;
-        try { d = (await API.get('/manager/reports/management?' + my())).data; }
-        catch (e) { el('g2').innerHTML = `<div class="mq-empty">${UI.escapeHtml(e.message)}</div>`; return; }
-
-        const rows = d.teacherRows || [];
-        const maxStudents = Math.max(1, ...rows.map(r => r.studentsCount));
-        // جدول أداء المحفّظين + شريط توزيع بسيط
-        const perfRows = rows.length ? rows.map(r => `<tr>
-              <td style="font-weight:600;">${UI.escapeHtml(r.teacher.name)}</td>
-              <td>${UI.escapeHtml(r.teacher.type || '—')}</td>
-              <td style="min-width:150px;">
-                <div style="display:flex;align-items:center;gap:8px;">
-                  <div style="flex:1;height:8px;background:rgba(4,83,47,.1);border-radius:6px;overflow:hidden;">
-                    <div style="height:100%;width:${Math.round(r.studentsCount/maxStudents*100)}%;background:#04532F;"></div></div>
-                  <strong style="color:#04361F;">${r.studentsCount}</strong></div></td>
-              <td style="text-align:center;font-weight:700;color:${r.attendancePercent<70?'#B23A48':'#04532F'};">${r.attendancePercent}%</td>
-              <td style="text-align:center;">${r.avgCompletedJuz}</td>
-              <td style="text-align:center;">${r.completedQuran}</td></tr>`).join('')
-            : `<tr><td colspan="6" style="text-align:center;color:#7A8F82;padding:20px;">لا يوجد محفّظون في مركزك</td></tr>`;
-
-        // طلاب بلا محفّظ
-        const nt = d.noTeacher;
-        const ntBlock = nt.count ? `
-            <div class="mq-card">
-              <div class="mq-card-header"><h3 class="mq-card-title" style="color:#B23A48;">⚠️ طلاب بلا محفّظ (${nt.count})</h3></div>
-              <div class="mq-card-body"><div class="rp-actions" style="gap:8px;">
-                ${nt.rows.map(s => `<span class="mq-badge mq-badge-danger">${s.display_code ? UI.escapeHtml(s.display_code)+' · ' : ''}${UI.escapeHtml(s.name)}</span>`).join('')}
-              </div></div>
-            </div>`
-            : `<div class="mq-card"><div class="mq-card-body" style="color:#04532F;font-weight:600;">✓ كل طلاب المركز مرتبطون بمحفّظين.</div></div>`;
-
-        el('g2').innerHTML = `
-          <div class="rp-stack">
-            <div class="mq-stats">
-              ${statCard(d.summary.teachersCount, 'المحفّظون', 'gold')}
-              ${statCard(d.summary.studentsCount, 'الطلاب النشطون', 'green')}
-              ${statCard(d.summary.avgAttendance + '%', 'متوسّط الحضور', 'blue')}
-              ${statCard(nt.count, 'طلاب بلا محفّظ', nt.count ? 'red' : 'green')}
-            </div>
-
-            <div class="mq-card">
-              <div class="mq-card-header"><h3 class="mq-card-title">👨‍🏫 أداء المحفّظين وتوزيع الطلاب</h3>
-                <button class="mq-btn mq-btn--secondary mq-btn--sm" id="pdf-teachers">${UI.ic('report',15)} PDF</button></div>
-              <div class="rp-scroll"><table class="mq-table">
-                <thead><tr><th>المحفّظ</th><th>النوع</th><th>عدد الطلاب</th><th style="text-align:center;">متوسّط الحضور</th><th style="text-align:center;">متوسّط الأجزاء</th><th style="text-align:center;">أكملوا القرآن</th></tr></thead>
-                <tbody>${perfRows}</tbody></table></div>
-            </div>
-
-            ${ntBlock}
-          </div>`;
-
-        el('pdf-teachers').onclick = () => UI.openPdf('/manager/reports/teachers/pdf?' + my());
-    }
-
-    function loadAll() { loadGroup1(); loadGroup2(); }
-    el('p-go').onclick = loadAll;
-    loadAll();
+    loadCenter();
 })();
 </script>
 </body>

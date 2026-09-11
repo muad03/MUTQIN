@@ -454,3 +454,18 @@ a { text-decoration:none; }
 /* ===== اسم قابل للنقر داخل الجداول (يفتح صفحة تفاصيل) ===== */
 .mq-link-name { font-weight:600; color:var(--emerald-dark); text-decoration:none; border-bottom:1px dashed rgba(4,83,47,.35); }
 .mq-link-name:hover { color:var(--emerald); border-bottom-color:var(--emerald); }
+
+/* ===== صفحة تقارير مدير المركز — أقسام ثلاثة (rp-*) ===== */
+.rp-pick { display:flex; flex-direction:column; gap:6px; max-width:520px; margin-bottom:16px; }
+.rp-pick .mq-label { margin-bottom:0; }
+.rp-result:empty { display:none; }
+.rp-dd-wrap { position:relative; }
+.rp-dd { position:absolute; top:100%; right:0; left:0; z-index:30; margin-top:5px; background:#fff; border:1px solid rgba(4,83,47,.2);
+    border-radius:12px; max-height:260px; overflow-y:auto; box-shadow:0 18px 44px -16px rgba(4,54,31,.5); }
+.rp-dd-item { padding:10px 13px; cursor:pointer; border-bottom:1px solid rgba(4,54,31,.06); }
+.rp-dd-item:hover { background:var(--ivory-soft); }
+.rp-dd-name { font-weight:700; color:var(--emerald-dark); font-size:14px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.rp-dd-sub { font-size:12px; color:var(--muted); margin-top:2px; }
+.rp-dd-empty { padding:10px 13px; color:var(--faint); font-size:13px; }
+.rp-quality { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:-8px 0 18px; }
+.rp-quality-lbl { font-size:13px; font-weight:700; color:var(--emerald-dark); }
