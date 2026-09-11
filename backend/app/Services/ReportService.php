@@ -164,7 +164,8 @@ class ReportService
      */
     public function allCentersData($month, $year): array
     {
-        $rows = Center::orderBy('name')->get()->map(fn ($c) => $this->centerData($c, $month, $year));
+        // النشطة فقط — توحيداً مع لوحة الأدمن (المركز الموقوف يبقى في التاريخ لا في التقارير)
+        $rows = Center::where('is_active', true)->orderBy('name')->get()->map(fn ($c) => $this->centerData($c, $month, $year));
         return ['rows' => $rows, 'month' => (int) $month, 'year' => (int) $year];
     }
 
@@ -384,7 +385,7 @@ class ReportService
         $memorizations = Memorization::whereMonth('date', $month)->whereYear('date', $year)->count();
 
         return [
-            'centers'        => Center::count(),
+            'centers'        => Center::where('is_active', true)->count(), // كاللوحة: النشطة فقط
             'teachers'       => User::where('role', 'teacher')->count(),
             'students'       => Student::where('is_active', true)->count(),
             'parents'        => User::where('role', 'parent')->count(),
