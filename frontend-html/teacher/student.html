@@ -90,6 +90,15 @@
         </div>
         <div class="rp-quality"><span class="rp-quality-lbl">جودة سجلات الحفظ:</span>${Object.keys(QUALITY).map(k => `<span class="mq-badge mq-badge-${QUALITY[k][1]}">${QUALITY[k][0]}: ${q[k] ?? 0}</span>`).join('')}</div>
 
+        <section class="mq-card sd-day" id="sec-day">
+          <div class="mq-card-header"><h3 class="mq-card-title">📅 ماذا حدث في يوم…</h3>
+            <div class="sd-day-pick">
+              <input type="date" class="mq-input" id="day-input">
+              <button class="mq-btn mq-btn--primary mq-btn--sm" id="day-go">عرض</button>
+            </div></div>
+          <div class="mq-card-body" id="day-body"></div>
+        </section>
+
         <div class="mq-section"><h3 class="mq-section-title">📖 آخر سجلات الحفظ</h3></div>
         <div class="mq-card"><div class="rp-scroll"><table class="mq-table">
           <thead><tr><th>التاريخ</th><th>السورة</th><th style="text-align:center;">الجزء</th><th>الصفحات</th><th>الجودة</th><th>ملاحظات</th></tr></thead>
@@ -105,6 +114,43 @@
           <thead><tr><th style="width:12%;">التاريخ</th><th style="width:12%;">النتيجة</th><th>الأثمان المختبَرة</th><th>ملاحظات</th></tr></thead>
           <tbody>${testRows}</tbody></table></div></div>`;
 
+    // ===== فلتر اليوم — الافتراضي اليوم (محلي، لا toISOString) والصيغة Y-m-d تُتحقّق في الخادم =====
+    const dayInput = el('day-input'), dayBody = el('day-body');
+    dayInput.value = UI.todayStr();
+    async function loadDay() {
+        const date = dayInput.value;
+        if (!date) { dayBody.innerHTML = '<div class="sd-empty">اختر تاريخاً.</div>'; return; }
+        dayBody.innerHTML = 'جارٍ التحميل...';
+        let y;
+        try { y = (await API.get('/students/' + encodeURIComponent(id) + '/day?date=' + encodeURIComponent(date))).data; }
+        catch (e) { dayBody.innerHTML = `<div class="sd-empty" style="color:#B23A48;">${esc((e.errors && e.errors.date && e.errors.date[0]) || e.message)}</div>`; return; }
+
+        if (y.empty) { dayBody.innerHTML = `<div class="sd-empty">لا توجد سجلات لهذا الطالب في هذا التاريخ.</div>`; return; }
+
+        const att = y.attendance;
+        const attBlock = att ? `
+            <div class="sd-block"><div class="sd-block-title">حالة الحضور</div>
+              <div class="mq-center-head-top">${UI.attendanceBadge(att.status)}${att.time ? `<span class="sd-muted">الساعة ${esc(String(att.time).slice(0, 5))}</span>` : ''}${att.corrected_at ? '<span class="mq-badge mq-badge-info">مصحَّح</span>' : ''}</div>
+              ${notes(att.notes)}</div>`
+            : '<div class="sd-block"><div class="sd-block-title">حالة الحضور</div><span class="sd-muted">لم يُسجَّل حضور في هذا اليوم</span></div>';
+        const memoBlock = `
+            <div class="sd-block"><div class="sd-block-title">الحفظ المسجَّل</div>
+              ${(y.memorizations || []).length ? y.memorizations.map(m => `
+                <div class="sd-item"><div class="mq-center-head-top"><strong>${esc(m.surah_name)}</strong>
+                  ${m.juz ? `<span class="sd-muted">الجزء ${m.juz}</span>` : ''}${m.page_from && m.page_to ? `<span class="sd-muted">ص ${m.page_from}–${m.page_to}</span>` : ''}
+                  ${m.eighth ? `<span class="sd-muted">${esc(m.eighth)}</span>` : ''}${UI.qualityBadge(m.quality)}</div>${notes(m.notes)}</div>`).join('')
+                : '<span class="sd-muted">لا حفظ مسجَّل في هذا اليوم</span>'}</div>`;
+        const testBlock = `
+            <div class="sd-block"><div class="sd-block-title">الاختبار</div>
+              ${(y.tests || []).length ? y.tests.map(x => `
+                <div class="sd-item"><div class="mq-center-head-top">${UI.resultBadge(x.result)}<span class="sd-muted">${x.questions?.length || 0} أثمان</span></div>
+                  ${thumnList(x.questions)}${notes(x.notes)}</div>`).join('')
+                : '<span class="sd-muted">لا اختبار في هذا اليوم</span>'}</div>`;
+        dayBody.innerHTML = `<div class="sd-day-grid">${attBlock}${memoBlock}${testBlock}</div>`;
+    }
+    el('day-go').onclick = loadDay;
+    dayInput.addEventListener('change', loadDay);
+    loadDay();
 })();
 </script>
 </body>
