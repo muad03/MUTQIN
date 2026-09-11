@@ -28,7 +28,7 @@
     function addFields() {
         return [
             { name: 'name', label: 'الاسم الكامل', required: true },
-            { name: 'email', label: 'البريد الإلكتروني', type: 'email', required: true },
+            { name: 'email_prefix', label: 'الاسم اللاتيني (للبريد)', required: true, placeholder: 'مثال: ahmed.ali', help: 'بريد الدخول يُبنى في الخادم من الاسم اللاتيني وكود المحفّظ (مثل ahmed.ali_t1@mutqin.ly) ويظهر بعد الحفظ' },
             { name: 'phone', label: 'رقم الهاتف' },
             { name: 'center_id', label: 'المركز', type: 'select', required: true, options: centerOpts() },
             { name: 'type', label: 'نوع المحفظ', type: 'select', required: true, options: typeOpts },
@@ -280,7 +280,7 @@
 
             document.getElementById('add').onclick = () => UI.formModal({
                 title: 'إضافة معلم', fields: addFields(), onMount: wireSinglePrimary(null),
-                onSubmit: async (v, h) => { await API.post('/teachers', v); UI.toast('تم إضافة المعلم'); h.close(); renderTeachers(true); }
+                onSubmit: async (v, h) => { const res = await API.post('/teachers', v); UI.toast(res.message || 'تم إضافة المعلم'); h.close(); renderTeachers(true); }
             });
 
             renderTeachers(true);

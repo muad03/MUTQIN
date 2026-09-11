@@ -100,8 +100,7 @@
                 </div>
               </div>
               ${inp('name', 'اسم المحفّظ', { req: true })}
-              ${inp('email_prefix', 'الاسم اللاتيني (للبريد)', { req: true, ph: 'مثال: ahmed.ali', style: 'direction:ltr;text-align:right;' })}
-              <div id="email-preview" style="font-size:12.5px;color:#04532F;font-weight:700;margin:-8px 0 13px;direction:ltr;text-align:right;display:none;"></div>
+              ${inp('email_prefix', 'الاسم اللاتيني (للبريد)', { req: true, ph: 'مثال: ahmed.ali', style: 'direction:ltr;text-align:right;', help: 'بريد الدخول يُبنى في الخادم من الاسم اللاتيني وكود المحفّظ ويظهر بعد الحفظ' })}
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
                 <div style="margin-bottom:13px;">
                   <label class="mq-label">نوع المحفّظ <span style="color:#B23A48;">*</span></label>
@@ -131,16 +130,12 @@
         ov.querySelectorAll('[data-close]').forEach(b => b.onclick = close);
         ov.addEventListener('mousedown', e => { if (e.target === ov) close(); });
 
-        // معاينة حيّة للبريد + تنظيف تلقائي لمن يلصق البريد كاملاً
+        // تنظيف تلقائي لمن يلصق البريد كاملاً — لا معاينة: البريد النهائي يُبنى من الكود بعد الحفظ
         const pfx = ov.querySelector('[name="email_prefix"]');
-        const prev = ov.querySelector('#email-preview');
-        const refresh = () => {
+        pfx.addEventListener('input', () => {
             const v = pfx.value.toLowerCase().trim().replace(/@.*$/, '');
             if (v !== pfx.value) pfx.value = v;
-            prev.textContent = v ? v + '.{رقم}@mutqin.ly' : '';
-            prev.style.display = v ? '' : 'none';
-        };
-        pfx.addEventListener('input', refresh);
+        });
 
         ov.querySelector('#add-form').addEventListener('submit', async (e) => {
             e.preventDefault();

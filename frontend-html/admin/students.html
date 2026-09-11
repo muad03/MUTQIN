@@ -65,7 +65,7 @@
             { name: 'age', label: 'العمر', type: 'number' },
             { name: 'phone', label: 'هاتف الطالب' },
             { name: 'guardian_name', label: 'اسم ولي الأمر', required: true },
-            { name: 'guardian_email', label: 'بريد ولي الأمر', type: 'email', required: true, help: 'يُنشأ به حساب دخول لولي الأمر' },
+            { name: 'guardian_email', label: 'بريد ولي الأمر (اختياري)', type: 'email', help: 'للمطابقة مع حساب ولي أمر قائم فقط — بريد الحساب الجديد يُبنى في الخادم من كوده ويظهر بعد الحفظ' },
             { name: 'guardian_phone', label: 'هاتف ولي الأمر' },
             { name: 'guardian_password', label: 'كلمة مرور ولي الأمر', type: 'password', required: true, help: 'إلزامية — 6 أحرف على الأقل، ولا تُولَّد تلقائياً' },
         ];
@@ -168,7 +168,7 @@
 
               <div id="gm-new">
                 ${inp('guardian_name', 'اسم ولي الأمر')}
-                ${inp('guardian_email', 'بريد ولي الأمر', { type: 'email', help: 'يُنشأ به حساب دخول لولي الأمر' })}
+                ${inp('guardian_email', 'بريد ولي الأمر (اختياري)', { type: 'email', help: 'للمطابقة مع حساب ولي أمر قائم فقط — بريد الحساب الجديد يُبنى في الخادم من كوده ويظهر بعد الحفظ' })}
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
                   <div style="margin-bottom:13px;">
                     <label class="mq-label">جنسية ولي الأمر</label>
