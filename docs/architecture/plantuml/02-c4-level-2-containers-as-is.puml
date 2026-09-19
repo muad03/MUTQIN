@@ -1,0 +1,49 @@
+@startuml MUTQEN_C4_L2_Containers
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+LAYOUT_TOP_DOWN()
+title MUTQEN - C4 Level 2 - Containers - AS-IS (cPanel shared host mutqin.ly)
+
+Person(admin, "System Admin", "admin")
+Person(manager, "Center Manager", "center_manager")
+Person(teacher, "Teacher", "teacher")
+Person(parent, "Parent", "parent")
+
+System_Boundary(host, "cPanel shared host - mutqin.ly (Apache 2.4, PHP 8.2, /home/[redacted-cpanel-user]/public_html)") {
+    Container(web, "Web Client", "Static HTML5 + Bootstrap 5 RTL + vanilla JS, PWA manifest", "public_html/. Pages admin/ manager/ teacher/ parent/. window modules Config, API, Auth, UI, Layout. localStorage mutqin_token / mutqin_user. Bell polls /notifications every 60s. Auth.requireAuth is UX-only.")
+
+    Container_Boundary(apiproc, "REST API process - public_html/backend (Laravel 11, PHP 8.2)") {
+        Container(api, "API core", "Laravel 11, routes/api.php", "Middleware: throttle (public), auth:sanctum, role gates admin / teacher / parent / manager (role AND token ability). Envelope {success,message,data,errors}. Only backend/public is web-reachable (.htaccess).")
+        Container(sanctum, "Sanctum tokens", "laravel/sanctum ^4.0", "personal_access_tokens. Abilities: parent=[parent], center_manager=[manager], admin+teacher=[*]. expiration 10080 min (7d). Revoked on deactivate / center deactivate / password change.")
+        Container(pdf, "mPDF", "mpdf/mpdf ^8.3", "ReportPdfController: student, teacherGroup, center, teachers, atRisk, overview + managerCenter/managerAtRisk/managerTeachers. Western digits.")
+        Container(xlsx, "PhpSpreadsheet", "phpoffice/phpspreadsheet ^5.8", "AttendanceImportController::import - fingerprint xlsx to attendances (center-scoped, inactive skipped).")
+        Container(notif, "In-app notifications", "Laravel database channel", "InAppNotification::sendSafe - synchronous insert, swallows failures. No ShouldQueue, no push.")
+    }
+
+    ContainerDb(db, "mutqin_db", "MySQL / MariaDB", "17 domain/auth tables + Laravel cache, jobs, sessions, password_reset_tokens")
+    Container(fs, "storage/ + .env", "Filesystem on host", "Excluded from deploy rsync; logs (OTP in local env); cache/session/queue drivers = database but nothing queued.")
+}
+
+Container_Ext(n8n, "n8n daily attendance digest", "n8n workflow (external host / Docker)", "scheduleTrigger 20:00 Africa/Tripoli -> set -> httpRequest login -> httpRequest GET /api/attendance -> code -> if needsAttention -> emailSend")
+System_Ext(smtp, "SMTP server", "digest recipients")
+System_Ext(fpdev, "Fingerprint device", "xlsx export carried by a human")
+
+Rel(admin, web, "HTTPS")
+Rel(manager, web, "HTTPS")
+Rel(teacher, web, "HTTPS")
+Rel(parent, web, "HTTPS")
+Rel(web, api, "fetch JSON, Authorization: Bearer", "same-origin /backend/public/api (prod) or http://localhost:9090/api (dev)")
+Rel(api, sanctum, "createToken / tokenCan / tokens()->delete()")
+Rel(api, pdf, "render()")
+Rel(api, xlsx, "IOFactory::load()")
+Rel(api, notif, "sendSafe()")
+Rel(api, db, "Eloquent ORM", "PDO MySQL")
+Rel(sanctum, db, "personal_access_tokens")
+Rel(notif, db, "notifications")
+Rel(api, fs, "logs / cache")
+Rel(n8n, api, "login + GET /api/attendance?date=", "HTTPS")
+Rel(n8n, smtp, "emailSend", "SMTP")
+Rel(fpdev, web, "xlsx uploaded by teacher or manager")
+
+SHOW_LEGEND()
+@enduml

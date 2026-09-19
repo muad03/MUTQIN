@@ -1,0 +1,113 @@
+@startuml MUTQEN_TOBE_Modular_Monolith
+title PROPOSED TO-BE - MUTQEN modular monolith (single Laravel deployable, app/Modules/*) - NOT IMPLEMENTED
+skinparam componentStyle rectangle
+skinparam linetype ortho
+
+note as N0
+  PROPOSED. Each module owns its tables and exposes a small public contract;
+  cross-module calls go through contracts (solid) or domain events (dashed).
+  Middleware chain (auth:sanctum + role AND ability gates) and the JSON envelope stay unchanged.
+end note
+
+package "Edge - thin HTTP layer" {
+  [Per-module routes merged under /api/v1\nsame envelope, same middleware chain] as routes
+  [Clients: static web client, Flutter apps,\nn8n with a service token] as clients
+}
+
+package "Identity & Access" as IAM {
+  interface "authenticate / issueToken(role abilities)\nrevokeAllTokens / currentUser\nresetPasswordByOtp / changePassword / userDirectory" as iam_c
+  [User, RoleGate (role AND ability), TokenPolicy 7d,\nPasswordChange audit, OtpReset,\nDisplayCode + LoginEmail generators] as iam_d
+  database "users, personal_access_tokens,\notp_resets, password_change_logs,\ncode_sequences" as iam_db
+}
+
+package "Centers & Staff" as CEN {
+  interface "centers / teachers / managers CRUD + toggle\nassertPrimaryTeacherRule / staffOfCenter" as cen_c
+  [Center, Teacher (primary|assistant),\nCenterManager (one per center),\nPrimaryTeacherRule under lock] as cen_d
+  database "centers\n(+ staff user rows via IAM contract)" as cen_db
+}
+
+package "Students & Guardians" as STU {
+  interface "enroll / update / toggle / changeTeacher\nmoveToCenter(studentId, centerId, teacherId)\nresolveGuardian / childrenOf / searchNormalized" as stu_c
+  [Student (is_active, former_teacher_name),\nGuardian resolution id_number > phone > email,\nnationality rules, ArabicText search] as stu_d
+  database "students\n(+ parent user rows via IAM contract)" as stu_db
+}
+
+package "Attendance" as ATT {
+  interface "record / importXlsx(centerScope) / correct\ndailyList(date) / monthlyReport" as att_c
+  [Attendance (unique student+day),\nxlsx parser, correction audit,\nactive-students filter] as att_d
+  database "attendances" as att_db
+}
+
+package "Memorization & Assessment" as MEM {
+  interface "recordMemorization / deleteMemorization\nrecordWeeklyTest / updateWeeklyTest\nprogressOf(studentIds) / surahs / athmanSearch" as mem_c
+  [SurahReference (juz from surah name),\nthumn tests + questions,\nfuture Revision & Tajweed] as mem_d
+  database "memorizations, weekly_tests,\nweekly_test_questions, revisions,\ntajweed_evaluations, athman" as mem_db
+}
+
+package "Requests & Workflow" as REQ {
+  interface "createTransfer / approve / reject\nincomingOf(centerId) / outgoingOf(centerId)" as req_c
+  [StudentRequest state machine\npending -> approved | rejected,\ntarget-center-manager authority,\nstudent snapshot] as req_d
+  database "student_requests" as req_db
+}
+
+package "Messaging & Notifications" as MSG {
+  interface "sendMessage / threadsOf(user)\nnotify(userIds, type, payload) / markRead" as msg_c
+  [Message thread per student (parent <-> actual teacher),\nNotification: in-app now; push (FCM), SMS, e-mail\nchannels later via queued listeners] as msg_d
+  database "messages, notifications,\ndevice_tokens (new)" as msg_db
+}
+
+package "Reporting (read-only)" as REP {
+  interface "studentReport / teacherReport / centerReport\natRisk / overview / pdf(view, scope)" as rep_c
+  [Read models over other modules,\nmPDF rendering, Percentage,\nactive-centers filter, week Sat-Fri] as rep_d
+}
+
+package "Shared kernel (no business rules)" as KER {
+  [ArabicText, PhoneNumber, Percentage,\nEnvelope response, Arabic validation messages,\ntimezone Africa/Tripoli] as k1
+  queue "Domain event bus\n(Laravel events, queued listeners)" as bus
+}
+
+clients --> routes
+routes --> iam_c
+routes --> cen_c
+routes --> stu_c
+routes --> att_c
+routes --> mem_c
+routes --> req_c
+routes --> msg_c
+routes --> rep_c
+
+iam_c - iam_d
+cen_c - cen_d
+stu_c - stu_d
+att_c - att_d
+mem_c - mem_d
+req_c - req_d
+msg_c - msg_d
+rep_c - rep_d
+iam_d --> iam_db
+cen_d --> cen_db
+stu_d --> stu_db
+att_d --> att_db
+mem_d --> mem_db
+req_d --> req_db
+msg_d --> msg_db
+
+req_d --> stu_c : moveToCenter()
+req_d --> cen_c : staffOfCenter() (validate target teacher)
+stu_d --> iam_c : create parent account
+cen_d --> iam_c : create teacher / manager accounts
+att_d --> stu_c : active students of scope
+mem_d --> stu_c : ownership check
+rep_d ..> att_c : read models
+rep_d ..> mem_c : read models
+rep_d ..> stu_c : read models
+rep_d ..> cen_c : read models
+
+req_d ..> bus : TransferRequested / Approved / Rejected
+mem_d ..> bus : MemorizationRecorded / WeeklyTestRecorded
+msg_d ..> bus : MessageSent
+cen_d ..> bus : CenterDeactivated / TeacherDeactivated / ManagerDeactivated
+iam_d ..> bus : PasswordChanged / UserDeactivated
+bus ..> msg_c : notify parent / manager / requester
+bus ..> iam_c : revokeAllTokens (user or center members)
+@enduml

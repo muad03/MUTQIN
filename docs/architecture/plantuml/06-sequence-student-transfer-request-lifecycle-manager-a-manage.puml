@@ -1,0 +1,82 @@
+@startuml MUTQEN_Seq_Student_Transfer
+autonumber
+title Student transfer request lifecycle - manager A (source) to manager B (target) - AS-IS
+
+actor "Manager A\n(source center A)" as MA
+participant "auth:sanctum\n+ manager gate" as G
+participant "StudentRequestController" as R
+database "MySQL\nstudents, student_requests,\nusers, centers" as DB
+participant "InAppNotification\n(database channel)" as N
+actor "Manager B\n(target center B, active)" as MB
+actor "Manager C / Admin\n(not the target)" as MC
+
+MA -> G : GET /api/manager/centers (active centers except own)
+G --> MA : 200 transfer targets
+MA -> G : POST /api/manager/student-requests\n{student_id, target_center_id, target_teacher_id?}
+G -> R : managerStore (from_center = account.center_id, never from body)
+R -> DB : load student + teacher
+alt student.center_id != A
+    R --> MA : 403 not a student of your center
+else student inactive
+    R --> MA : 422 activate first
+else target == A / target center inactive / no ACTIVE manager in B /\nchosen teacher not active teacher of B / pending transfer exists
+    R --> MA : 422 Arabic reason
+else valid
+    R -> DB : INSERT student_requests\n type=transfer, status=pending, requested_by=A-manager,\n from_center_id=A, from_teacher_id=student.teacher_id,\n target_center_id=B, target_teacher_id=NULL|chosen,\n snapshot(name, national_id, nationality)
+    R -> N : sendSafe(managerB, request_created, link manager/requests.html)
+    N -> DB : INSERT notifications (notifiable = manager B) - failure only logged
+    R --> MA : 201 data.request (direction=outgoing)
+end
+
+== Manager B discovers the request ==
+MB -> G : GET /api/notifications (layout.js poll 60s)
+G --> MB : request_created
+MB -> G : GET /api/manager/student-requests (status=pending)
+G -> R : managerIndex (target_center_id=B OR transfer from_center_id=B)
+R --> MB : rows with direction incoming|outgoing
+
+== 403 branch: not the target-center manager ==
+MC -> G : POST /api/manager/student-requests/{id}/approve
+alt caller is admin / teacher / parent
+    G --> MC : 403 at CenterManagerMiddleware (role/ability)
+else caller is manager of another center (incl. Manager A)
+    G -> R : approve
+    R -> R : assertManagerScope: target_center_id != caller.center_id
+    R --> MC : 403 request not incoming to your center
+end
+
+== Approval by manager B ==
+MB -> G : POST /api/manager/student-requests/{id}/approve {target_teacher_id?}
+G -> R : approve
+R -> R : assertManagerScope OK (target_center_id == B)
+alt status != pending
+    R --> MB : 422 already processed
+else teacher given (body overrides request) but not role=teacher in center B
+    R --> MB : 422 teacher not in target center
+else student row gone
+    R --> MB : 422 student no longer exists
+else ok
+    R -> DB : BEGIN
+    R -> DB : UPDATE students SET center_id=B, teacher_id=chosen|NULL,\n former_teacher_name = old teacher name when unassigned
+    R -> DB : UPDATE student_requests SET status=approved, target_teacher_id=chosen|NULL
+    R -> DB : COMMIT
+    R -> N : sendSafe(requester = manager A, request_approved, link manager/requests.html)
+    N -> DB : INSERT notifications (notifiable = manager A)
+    R --> MB : 200 student moved (with / without teacher)
+end
+
+opt reject instead
+    MB -> G : POST .../{id}/reject {admin_note <= 500}
+    G -> R : reject (assertManagerScope, status pending)
+    R -> DB : UPDATE student_requests SET status=rejected, admin_note
+    R -> N : sendSafe(manager A, request_rejected)
+    R --> MB : 200
+end
+
+note over MA, MB
+  Admin is never notified in the transfer flow.
+  Legacy type=add rows follow the same approve/reject path but create the student
+  (and would call ParentResolver without a password - see notes).
+  If manager B is deactivated the request stays pending (admin gets manager_deactivated info only).
+end note
+@enduml
