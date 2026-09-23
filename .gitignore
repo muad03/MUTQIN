@@ -8,3 +8,16 @@
 # OS
 .DS_Store
 Thumbs.db
+
+# Agent tooling installed into this checkout, not project source. The skills
+# and their lockfile are managed by a skills manager and differ per machine,
+# so they are noise in a diff rather than something the team shares.
+.claude/
+.agents/
+.minimax/
+skills-lock.json
+
+# The Flutter client is its own git repository (radwan-77/mutqin-flutter-app)
+# checked out inside this one -- committing it here would either swallow its
+# history or add a gitlink to a repo this one does not own.
+flutter-app/

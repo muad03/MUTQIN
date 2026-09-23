@@ -10,7 +10,7 @@ class CenterController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Center::withCount(['students', 'teachers'])->latest();
+        $query = Center::withCount(['students', 'teachers'])->latest()->orderByDesc('id');
 
         // ?active=1 — المراكز النشطة فقط: لقوائم الاختيار (إضافة طالب/محفّظ/مدير)
         // كي لا يُضاف أحد لمركز معطَّل. صفحة إدارة المراكز والتقارير تعرض الكل.

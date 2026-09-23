@@ -23,7 +23,7 @@ class MemorizationController extends Controller
 
         $query = Memorization::whereIn('student_id', $studentIds)
             ->with('student')
-            ->latest();
+            ->latest()->orderByDesc('id');
 
         // فلتر اختياري بجزء السورة: يُشتقّ الجزء من اسم السورة عبر المرجع الثابت
         // (لا نعتمد على memorizations.juz لأنه غير موثوق). يُرجِع سجلات سور الجزء N فقط.

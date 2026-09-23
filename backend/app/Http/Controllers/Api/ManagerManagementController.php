@@ -42,7 +42,7 @@ class ManagerManagementController extends Controller
             'success' => true,
             'data' => User::where('role', 'center_manager')
                 ->with('center:id,name,city')
-                ->latest()
+                ->latest()->orderByDesc('id')
                 ->get(['id', 'name', 'display_code', 'email', 'phone', 'center_id', 'is_active', 'created_at']),
         ]);
     }

@@ -68,7 +68,7 @@ class StudentController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-        $query = Student::with(['center', 'teacher'])->latest();
+        $query = Student::with(['center', 'teacher'])->latest()->orderByDesc('id');
 
         if ($user->isCenterManager()) {
             $query->where('center_id', $user->center_id); // مدير المركز: طلاب مركزه فقط

@@ -15,7 +15,7 @@ class WeeklyTestController extends Controller
     {
         $user = $request->user();
 
-        $query = WeeklyTest::with(['student', 'questions'])->latest(); // تحميل تفاصيل الأثمان المختبرة مع نتائج الاختبارات
+        $query = WeeklyTest::with(['student', 'questions'])->latest()->orderByDesc('id'); // تحميل تفاصيل الأثمان المختبرة مع نتائج الاختبارات
         if (!$user->isAdmin()) {
             $query->where('teacher_id', $user->id);
         } else if ($request->has('teacher_id')) {

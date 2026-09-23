@@ -11,7 +11,7 @@ class TeacherController extends Controller
 {
     public function index(Request $request)
     {
-        $query = User::where('role', 'teacher')->withCount('students')->latest();
+        $query = User::where('role', 'teacher')->withCount('students')->latest()->orderByDesc('id');
 
         // فلتر اختياري بالمركز — لقائمة المحفّظ التابعة للمركز في نماذج الطلاب
         if ($request->filled('center_id')) {
