@@ -1,0 +1,278 @@
+@startuml MUTQEN_ERD
+hide circle
+skinparam linetype ortho
+skinparam classFontSize 10
+skinparam classAttributeFontSize 9
+title MUTQEN - ERD (final schema reconstructed from backend/database/migrations, 34 files, up to 2026_09_11)
+
+entity "users" as users {
+  * id : bigint <<PK>>
+  --
+  * name : varchar
+  display_code : varchar(20) <<UK>> T{n}/CA{n}/P{n}, NULL admin
+  * email : varchar <<UK>>
+  phone : varchar (normalized, no unique idx)
+  * role : varchar  admin|center_manager|teacher|parent
+  email_verified_at : timestamp
+  * password : [redacted]
+  * password_changed_count : int = 0
+  password_last_changed_at : timestamp
+  remember_token : varchar
+  center_id : bigint <<FK centers, SET NULL>>
+  type : enum(Arabic: primary|assistant muhaffiz)
+  * is_active : bool = true
+  status_changed_by : bigint <<FK users, SET NULL>>
+  status_changed_at : timestamp
+  * nationality_type : enum libyan|foreigner
+  nationality_name : varchar(100)
+  id_number : varchar(32) <<UK>>
+  created_at / updated_at
+}
+
+entity "centers" as centers {
+  * id : bigint <<PK>>
+  --
+  * name : varchar
+  display_code : varchar(20) <<UK>> C{n}
+  city, address, phone : varchar
+  * is_active : bool = true
+  created_at / updated_at
+}
+
+entity "students" as students {
+  * id : bigint <<PK>>
+  --
+  * name : varchar
+  display_code : varchar(20) <<UK>> S{n}
+  birth_date : date (vestigial)
+  phone : varchar
+  national_id : varchar(32) <<UK>> (raw ALTER)
+  * nationality_type : enum libyan|foreigner
+  nationality_name : varchar(100)
+  age : int
+  guardian_name, guardian_phone : varchar (display only)
+  center_id : bigint <<FK centers, SET NULL>>
+  teacher_id : bigint <<FK users, SET NULL>>
+  former_teacher_name : varchar
+  parent_id : bigint <<FK users, SET NULL>>
+  enrollment_date : date
+  * is_active : bool = true
+  status_changed_by : bigint <<FK users, SET NULL>>
+  status_changed_at : timestamp
+  created_at / updated_at
+}
+
+entity "attendances" as attendances {
+  * id : bigint <<PK>>
+  --
+  * student_id : bigint <<FK students, CASCADE>>
+  teacher_id : bigint <<FK users, SET NULL>>
+  center_id : bigint <<FK centers, SET NULL>>
+  * date : date
+  time : varchar
+  * status : enum present|absent|late
+  notes : text
+  imported_at : timestamp
+  corrected_by : bigint <<FK users, SET NULL>>
+  corrected_at : timestamp
+  created_at / updated_at
+  ..
+  UNIQUE(student_id, date)
+}
+
+entity "memorizations" as memorizations {
+  * id : bigint <<PK>>
+  --
+  * student_id : bigint <<FK students, CASCADE>>
+  teacher_id : bigint <<FK users, SET NULL>>
+  * date : date
+  * surah_name : varchar (juz source of truth)
+  juz : int (unreliable)
+  hizb, page_from, page_to : int
+  eighth : varchar
+  * quality : enum excellent|good|average|weak
+  notes : text
+  created_at / updated_at
+}
+
+entity "revisions" as revisions {
+  * id : bigint <<PK>>
+  --
+  * student_id : bigint <<FK students, CASCADE>>
+  * teacher_id : bigint <<FK users, CASCADE>> (NOT NULL!)
+  * date : date
+  * surah_name : varchar
+  page_from, page_to : int
+  * quality : enum
+  notes : text
+  created_at / updated_at
+}
+
+entity "tajweed_evaluations" as tajweed {
+  * id : bigint <<PK>>
+  --
+  * student_id : bigint <<FK students, CASCADE>>
+  * teacher_id : bigint <<FK users, CASCADE>> (NOT NULL!)
+  * date : date
+  makharij_score, sifat_score, madd_score, waqf_score : int
+  total_score : int (model hook)
+  notes : text
+  created_at / updated_at
+}
+
+entity "weekly_tests" as weekly_tests {
+  * id : bigint <<PK>>
+  --
+  * student_id : bigint <<FK students, CASCADE>>
+  teacher_id : bigint <<FK users, SET NULL>>
+  * result : enum (Arabic pass|fail)
+  * exam_date : date
+  notes : text
+  created_at / updated_at
+}
+
+entity "weekly_test_questions" as wtq {
+  * id : bigint <<PK>>
+  --
+  * weekly_test_id : bigint <<FK weekly_tests, CASCADE>>
+  * student_id : bigint <<FK students, CASCADE>>
+  * eighth_start : varchar
+  * result : enum (Arabic pass|fail)
+  mistake : text
+  created_at / updated_at
+}
+
+entity "athman" as athman {
+  * id : bigint <<PK>>
+  --
+  * hizb : tinyint 1..60
+  * thumn_in_hizb : tinyint 1..8
+  * global_order : smallint 1..477 (idx)
+  * surah_name : varchar (idx)
+  * start_text, start_text_norm : text
+  page : smallint
+  created_at / updated_at
+  ..
+  UNIQUE(hizb, thumn_in_hizb) - no FKs
+}
+
+entity "student_requests" as sreq {
+  * id : bigint <<PK>>
+  --
+  * type : enum add|transfer
+  * status : enum pending|approved|rejected (idx)
+  * requested_by : bigint <<FK users, CASCADE>>
+  * target_center_id : bigint <<FK centers, RESTRICT>>
+  target_teacher_id : bigint <<FK users, RESTRICT>> (nullable 2026-09-08)
+  student_id : bigint <<FK students, SET NULL>>
+  national_id : varchar(12) (idx)
+  nationality_type, nationality_name
+  student_name, age, phone
+  guardian_name, guardian_phone, guardian_email
+  guardian_nationality_type, guardian_nationality_name, guardian_id_number
+  from_center_id : bigint <<FK centers, RESTRICT>>
+  from_teacher_id : bigint <<FK users, RESTRICT>>
+  admin_note : text
+  created_at / updated_at
+}
+
+entity "otp_resets" as otp {
+  * id : bigint <<PK>>
+  --
+  * user_id : bigint <<FK users, CASCADE>> (idx)
+  * otp_hash : varchar
+  * expires_at : timestamp (+10 min)
+  * attempts : tinyint (max 5)
+  created_at / updated_at
+}
+
+entity "password_change_logs" as pcl {
+  * id : bigint <<PK>>
+  --
+  * user_id : bigint <<FK users, CASCADE>> (idx)
+  * changed_at : timestamp
+  * method : enum otp|self|admin
+  created_at / updated_at
+}
+
+entity "notifications" as notifications {
+  * id : uuid <<PK>>
+  --
+  * type : varchar (InAppNotification)
+  * notifiable_type : varchar (morph, no FK)
+  * notifiable_id : bigint (morph)
+  * data : text JSON {type,title,body,ref_id,link}
+  read_at : timestamp
+  created_at / updated_at
+}
+
+entity "messages" as messages {
+  * id : bigint <<PK>>
+  --
+  * student_id : bigint <<FK students, CASCADE>>
+  * sender_id : bigint <<FK users, CASCADE>>
+  * sender_role : varchar(16) parent|teacher
+  * body : text
+  read_at : timestamp
+  created_at / updated_at
+  ..
+  idx(student_id,id), idx(student_id,sender_role,read_at)
+}
+
+entity "code_sequences" as codeseq {
+  * name : varchar(40) <<PK>> student|teacher|center_manager|center|parent
+  --
+  * value : bigint = 0
+}
+
+entity "personal_access_tokens" as pat {
+  * id : bigint <<PK>>
+  --
+  * tokenable_type : varchar (morph, no FK)
+  * tokenable_id : bigint (morph)
+  * name : text = auth_token
+  * token : varchar(64) <<UK>>
+  abilities : text JSON [*]|[parent]|[manager]
+  last_used_at : timestamp
+  expires_at : timestamp (idx, +7d)
+  created_at / updated_at
+}
+
+centers |o--o{ users : center_id
+users |o--o{ users : status_changed_by
+centers |o--o{ students : center_id
+users |o--o{ students : teacher_id
+users |o--o{ students : parent_id
+users |o--o{ students : status_changed_by
+students ||--o{ attendances : student_id
+users |o--o{ attendances : teacher_id
+centers |o--o{ attendances : center_id
+users |o--o{ attendances : corrected_by
+students ||--o{ memorizations : student_id
+users |o--o{ memorizations : teacher_id
+students ||--o{ revisions : student_id
+users ||--o{ revisions : teacher_id
+students ||--o{ tajweed : student_id
+users ||--o{ tajweed : teacher_id
+students ||--o{ weekly_tests : student_id
+users |o--o{ weekly_tests : teacher_id
+weekly_tests ||--o{ wtq : weekly_test_id
+students ||--o{ wtq : student_id
+users ||--o{ sreq : requested_by
+centers ||--o{ sreq : target_center_id
+users |o--o{ sreq : target_teacher_id
+students |o--o{ sreq : student_id
+centers |o--o{ sreq : from_center_id
+users |o--o{ sreq : from_teacher_id
+users ||--o{ otp : user_id
+users ||--o{ pcl : user_id
+students ||--o{ messages : student_id
+users ||--o{ messages : sender_id
+users ||..o{ notifications : notifiable (morph, no FK)
+users ||..o{ pat : tokenable (morph, no FK)
+
+note bottom of athman
+  Standalone reference index (477 athman, 92 surahs, no juz column).
+  code_sequences is also standalone: written by DisplayCode::next() with raw SQL.
+end note
+@enduml
