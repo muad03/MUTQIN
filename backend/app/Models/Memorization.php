@@ -10,6 +10,7 @@ class Memorization extends Model
         'student_id',
         'teacher_id',
         'date',
+        'session_type',
         'surah_name',
         'juz',
         'hizb',
@@ -42,6 +43,14 @@ class Memorization extends Model
             'average'   => 'مقبول',
             'weak'      => 'ضعيف',
             default     => $this->quality,
+        };
+    }
+
+    public function getSessionTypeLabelAttribute(): string
+    {
+        return match($this->session_type) {
+            'revision' => 'مراجعة',
+            default    => 'حفظ جديد',
         };
     }
 }

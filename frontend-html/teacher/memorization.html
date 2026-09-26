@@ -23,13 +23,23 @@
     let students = [], surahs = [];
 
     const today = UI.todayStr();
+    const sessionTypeOpts = [
+        { value: 'new', label: 'حفظ جديد' },
+        { value: 'revision', label: 'مراجعة' }];
     const qualityOpts = [
         { value: 'excellent', label: 'ممتاز' }, { value: 'good', label: 'جيد' },
         { value: 'average', label: 'مقبول' }, { value: 'weak', label: 'ضعيف' }];
 
+    function sessionTypeBadge(type) {
+        return type === 'revision'
+            ? '<span class="mq-badge mq-badge--plain">مراجعة</span>'
+            : '<span class="mq-badge mq-badge--brand">حفظ جديد</span>';
+    }
+
     function addFields() {
         return [
             { name: 'student_id', label: 'الطالب', type: 'select', required: true, options: students.map(s => ({ value: s.id, label: s.name })) },
+            { name: 'session_type', label: 'نوع الحصة', type: 'select', required: true, options: sessionTypeOpts, value: 'new' },
             { name: 'date', label: 'التاريخ', type: 'date', required: true, value: today },
             { name: 'surah_name', label: 'السورة', type: 'select', required: true, options: surahs.map(s => ({ value: s, label: s })) },
             { name: 'quality', label: 'تقييم الجودة', type: 'select', required: true, options: qualityOpts },
@@ -54,8 +64,8 @@
                   <button class="mq-btn mq-btn--primary" id="add">${UI.ic('plus', 17)} تسجيل حفظ</button>
                 </div>
                 <div class="mq-card"><table class="mq-table" id="tbl">
-                  <thead><tr><th>الطالب</th><th>التاريخ</th><th>السورة</th><th>الصفحات</th><th>الجودة</th><th>حذف</th></tr></thead>
-                  <tbody id="rec-body"><tr><td colspan="6" style="text-align:center;color:#7A8F82;padding:30px;">جارٍ التحميل...</td></tr></tbody>
+                  <thead><tr><th>الطالب</th><th>النوع</th><th>التاريخ</th><th>السورة</th><th>الصفحات</th><th>الجودة</th><th>حذف</th></tr></thead>
+                  <tbody id="rec-body"><tr><td colspan="7" style="text-align:center;color:#7A8F82;padding:30px;">جارٍ التحميل...</td></tr></tbody>
                 </table></div>`;
 
             const searchInput = document.getElementById('search');
@@ -66,7 +76,7 @@
             async function renderRecords(q) {
                 const seq = ++fetchSeq;
                 const body = document.getElementById('rec-body');
-                body.innerHTML = `<tr><td colspan="6" style="text-align:center;color:#7A8F82;padding:20px;">جارٍ التحميل...</td></tr>`;
+                body.innerHTML = `<tr><td colspan="7" style="text-align:center;color:#7A8F82;padding:20px;">جارٍ التحميل...</td></tr>`;
                 try {
                     const res = await API.get('/memorizations' + (q ? '?q=' + encodeURIComponent(q) : ''));
                     if (seq !== fetchSeq) return; // ردود متأخرة لا تكتب فوق الأحدث
@@ -74,12 +84,13 @@
                     body.innerHTML = memos.map(m => `
                         <tr>
                           <td>${UI.escapeHtml(m.student?.name || '')}</td>
+                          <td>${sessionTypeBadge(m.session_type)}</td>
                           <td>${UI.fmtDate(m.date)}</td>
                           <td style="font-weight:600;">${UI.escapeHtml(m.surah_name)}</td>
                           <td>${m.page_from && m.page_to ? m.page_from + '–' + m.page_to : '—'}</td>
                           <td>${UI.qualityBadge(m.quality)}</td>
                           <td><div class="mq-actions">${UI.actionBtn('del', `data-del="${m.id}"`)}</div></td>
-                        </tr>`).join('') || `<tr><td colspan="6" style="text-align:center;color:#7A8F82;padding:30px;">لا توجد سجلات حفظ${q ? ' مطابقة للبحث' : ''}</td></tr>`;
+                        </tr>`).join('') || `<tr><td colspan="7" style="text-align:center;color:#7A8F82;padding:30px;">لا توجد سجلات حفظ${q ? ' مطابقة للبحث' : ''}</td></tr>`;
 
                     // ربط أزرار الحذف على الصفوف الجديدة
                     body.querySelectorAll('[data-del]').forEach(b => b.onclick = () =>
@@ -88,7 +99,7 @@
                         }));
                 } catch (e) {
                     if (seq !== fetchSeq) return;
-                    body.innerHTML = `<tr><td colspan="6" style="text-align:center;color:#B23A48;padding:20px;">${UI.escapeHtml(e.message)}</td></tr>`;
+                    body.innerHTML = `<tr><td colspan="7" style="text-align:center;color:#B23A48;padding:20px;">${UI.escapeHtml(e.message)}</td></tr>`;
                 }
             }
 

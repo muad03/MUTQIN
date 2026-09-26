@@ -87,4 +87,48 @@ class MemorizationValidationTest extends TestCase
         }
         $this->assertSame(4, Memorization::count());
     }
+
+    public function test_session_type_storage_validation_and_filtering(): void
+    {
+        $teacher = $this->makeTeacher();
+        $s = $this->makeStudent($teacher);
+        $token = $this->loginToken($teacher);
+
+        // 1. Invalid session_type fails validation
+        $this->authed($token)->postJson('/api/memorizations', $this->payload([
+            'student_id'   => $s->id,
+            'session_type' => 'invalid_type',
+        ]))->assertStatus(422)->assertJsonValidationErrors(['session_type']);
+
+        // 2. Default is 'new'
+        $this->app['auth']->forgetGuards();
+        $r1 = $this->authed($token)->postJson('/api/memorizations', $this->payload([
+            'student_id' => $s->id,
+            'surah_name' => 'الفلق',
+        ]))->assertCreated();
+        $this->assertSame('new', $r1->json('data.session_type'));
+
+        // 3. Explicit 'revision'
+        $this->app['auth']->forgetGuards();
+        $r2 = $this->authed($token)->postJson('/api/memorizations', $this->payload([
+            'student_id'   => $s->id,
+            'surah_name'   => 'الإخلاص',
+            'session_type' => 'revision',
+        ]))->assertCreated();
+        $this->assertSame('revision', $r2->json('data.session_type'));
+
+        // 4. Filter by session_type=revision
+        $this->app['auth']->forgetGuards();
+        $listRevision = $this->authed($token)->getJson('/api/memorizations?session_type=revision')
+            ->assertOk();
+        $this->assertCount(1, $listRevision->json('data.data'));
+        $this->assertSame('الإخلاص', $listRevision->json('data.data.0.surah_name'));
+
+        // 5. Filter by session_type=new
+        $this->app['auth']->forgetGuards();
+        $listNew = $this->authed($token)->getJson('/api/memorizations?session_type=new')
+            ->assertOk();
+        $this->assertCount(1, $listNew->json('data.data'));
+        $this->assertSame('الفلق', $listNew->json('data.data.0.surah_name'));
+    }
 }

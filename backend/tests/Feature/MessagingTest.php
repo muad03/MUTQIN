@@ -33,7 +33,8 @@ class MessagingTest extends TestCase
         // ولي الأمر يرسل
         $this->authed($this->loginToken($parent))
             ->postJson("/api/parent/messages/{$student->id}", ['body' => 'كيف مستوى ابني في الحفظ؟'])
-            ->assertCreated();
+            ->assertCreated()
+            ->assertJsonPath('data.mine', true);
         $this->assertDatabaseHas('messages', [
             'student_id' => $student->id, 'sender_id' => $parent->id,
             'sender_role' => 'parent', 'read_at' => null,
@@ -52,7 +53,8 @@ class MessagingTest extends TestCase
         $this->app['auth']->forgetGuards();
         $this->authed($teacherToken)
             ->postJson("/api/teacher/messages/{$student->id}", ['body' => 'ممتاز، أتم جزء عمّ'])
-            ->assertCreated();
+            ->assertCreated()
+            ->assertJsonPath('data.mine', true);
 
         $this->app['auth']->forgetGuards();
         $this->flushHeaders();

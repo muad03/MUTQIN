@@ -108,13 +108,22 @@ class StudentController extends Controller
             // فارغاً فطابق LIKE '%%' كلَّ من له هاتف (خلل مطابقة زائفة)
             $digits = PhoneNumber::normalize($q);
             $like = '%' . $norm . '%';
-            $query->where(function ($w) use ($q, $norm, $digits, $like) {
+
+            // تطبيع الكود: أرقام عربية → غربية، ثم قبول 46 أو S46/s46
+            $western = strtr($q, ['٠'=>'0','١'=>'1','٢'=>'2','٣'=>'3','٤'=>'4','٥'=>'5','٦'=>'6','٧'=>'7','٨'=>'8','٩'=>'9']);
+            $code = preg_match('/^\s*[sS]?\s*(\d+)\s*$/u', $western, $m) ? 'S' . (int) $m[1] : null;
+
+            $query->where(function ($w) use ($q, $norm, $digits, $like, $code) {
                 $w->whereRaw(ArabicText::sqlNormalize('name') . ' LIKE ?', [$like])
                   ->orWhereRaw(ArabicText::sqlNormalize('guardian_name') . ' LIKE ?', [$like])
                   ->orWhereRaw(ArabicText::sqlNormalize('former_teacher_name') . ' LIKE ?', [$like])
                   ->orWhereRaw(ArabicText::sqlNormalize('nationality_name') . ' LIKE ?', [$like])
                   ->orWhereHas('center', fn ($c) => $c->whereRaw(ArabicText::sqlNormalize('name') . ' LIKE ?', [$like]))
                   ->orWhereHas('teacher', fn ($t) => $t->whereRaw(ArabicText::sqlNormalize('name') . ' LIKE ?', [$like]));
+                if ($code) {
+                    $w->orWhere('display_code', $code);
+                }
+                $w->orWhere('display_code', 'LIKE', "%{$q}%");
                 // كلمتا التصنيف: «ليبي» و«أجنبي» (بعد التطبيع: اجنبي)
                 if (mb_strpos($norm, 'ليبي') !== false) {
                     $w->orWhere('nationality_type', 'libyan');

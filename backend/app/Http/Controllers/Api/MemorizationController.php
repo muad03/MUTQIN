@@ -31,6 +31,11 @@ class MemorizationController extends Controller
             $query->whereIn('surah_name', SurahReference::namesOfJuz((int) $request->juz));
         }
 
+        // فلتر اختياري بنوع الحصة: حفظ جديد (new) أو مراجعة (revision)
+        if ($request->filled('session_type') && in_array($request->session_type, ['new', 'revision'])) {
+            $query->where('session_type', $request->session_type);
+        }
+
         // بحث موحّد q: رقم جزء (1-30، حتى بالأرقام العربية «٣٠» أو بصيغة «جزء 5»)
         // أو اسم جزء شائع (عمّ/تبارك/قد سمع...) أو اسم طالب مطبَّع.
         // الجزء يُحوَّل لأسماء سوره عبر namesOfJuz — عمود juz المخزّن يبقى غير معتمَد.
@@ -126,28 +131,31 @@ class MemorizationController extends Controller
         $user = $request->user();
 
         $request->validate([
-            'student_id'  => 'required|exists:students,id',
-            'date'        => 'required|date',
+            'student_id'   => 'required|exists:students,id',
+            'date'         => 'required|date',
             // السورة يجب أن تكون من المرجع الثابت — خطأ إملائي كان يمرّ بصمت
             // فيسقط السجل من حساب التقدّم (المبني على مطابقة الاسم)
-            'surah_name'  => ['required', 'string', \Illuminate\Validation\Rule::in(array_keys(\App\Support\SurahReference::SURAHS))],
-            'juz'         => 'nullable|integer|between:1,30',
+            'surah_name'   => ['required', 'string', \Illuminate\Validation\Rule::in(array_keys(\App\Support\SurahReference::SURAHS))],
+            'juz'          => 'nullable|integer|between:1,30',
             // الصفحات: المصحف 604 صفحات، والنهاية لا تسبق البداية
-            'page_from'   => 'nullable|integer|between:1,604',
-            'page_to'     => 'nullable|integer|between:1,604|gte:page_from',
-            'quality'     => 'required|in:excellent,good,average,weak',
+            'page_from'    => 'nullable|integer|between:1,604',
+            'page_to'      => 'nullable|integer|between:1,604|gte:page_from',
+            'quality'      => 'required|in:excellent,good,average,weak',
+            // نوع الحصة: حفظ جديد أو مراجعة
+            'session_type' => 'nullable|in:new,revision',
         ], [
-            'student_id.required' => 'اختر الطالب',
-            'surah_name.required' => 'اختر السورة',
-            'surah_name.in'       => 'اسم السورة غير معروف — اختر سورة من القائمة',
-            'juz.integer'         => 'رقم الجزء يجب أن يكون عدداً صحيحاً',
-            'juz.between'         => 'رقم الجزء يجب أن يكون بين 1 و30',
-            'page_from.integer'   => 'رقم الصفحة يجب أن يكون عدداً صحيحاً',
-            'page_from.between'   => 'صفحة البداية يجب أن تكون بين 1 و604',
-            'page_to.integer'     => 'رقم الصفحة يجب أن يكون عدداً صحيحاً',
-            'page_to.between'     => 'صفحة النهاية يجب أن تكون بين 1 و604',
-            'page_to.gte'         => 'صفحة النهاية لا يمكن أن تسبق صفحة البداية',
-            'quality.required'    => 'اختر تقييم الجودة',
+            'student_id.required'  => 'اختر الطالب',
+            'surah_name.required'  => 'اختر السورة',
+            'surah_name.in'        => 'اسم السورة غير معروف — اختر سورة من القائمة',
+            'juz.integer'          => 'رقم الجزء يجب أن يكون عدداً صحيحاً',
+            'juz.between'          => 'رقم الجزء يجب أن يكون بين 1 و30',
+            'page_from.integer'    => 'رقم الصفحة يجب أن يكون عدداً صحيحاً',
+            'page_from.between'    => 'صفحة البداية يجب أن تكون بين 1 و604',
+            'page_to.integer'      => 'رقم الصفحة يجب أن يكون عدداً صحيحاً',
+            'page_to.between'      => 'صفحة النهاية يجب أن تكون بين 1 و604',
+            'page_to.gte'          => 'صفحة النهاية لا يمكن أن تسبق صفحة البداية',
+            'quality.required'     => 'اختر تقييم الجودة',
+            'session_type.in'      => 'نوع الحصة يجب أن يكون حفظ جديد أو مراجعة',
         ]);
 
         // الجزء المدخل يجب أن يقع ضمن مدى السورة (مثلاً الناس = 30 فقط، البقرة 1..3)
@@ -173,27 +181,35 @@ class MemorizationController extends Controller
         }
 
         $memorization = Memorization::create([
-            'student_id'  => $request->student_id,
-            'teacher_id'  => $user->id,
-            'date'        => $request->date,
-            'surah_name'  => $request->surah_name,
-            'juz'         => $request->juz,
-            'hizb'        => $request->hizb,
-            'page_from'   => $request->page_from,
-            'page_to'     => $request->page_to,
-            'eighth'      => $request->eighth,
-            'quality'     => $request->quality,
-            'notes'       => $request->notes,
+            'student_id'   => $request->student_id,
+            'teacher_id'   => $user->id,
+            'date'         => $request->date,
+            'session_type' => $request->input('session_type', 'new'),
+            'surah_name'   => $request->surah_name,
+            'juz'          => $request->juz,
+            'hizb'         => $request->hizb,
+            'page_from'    => $request->page_from,
+            'page_to'      => $request->page_to,
+            'eighth'       => $request->eighth,
+            'quality'      => $request->quality,
+            'notes'        => $request->notes,
         ]);
 
         // إشعار ولي أمر الطالب (إن وُجد) — ثانوي، لا يُسقط التسجيل
         $qualityLabels = ['excellent' => 'ممتاز', 'good' => 'جيد', 'average' => 'مقبول', 'weak' => 'ضعيف'];
+        $isRevision = $request->input('session_type') === 'revision';
+        $notifTitle = $isRevision ? 'تسجيل مراجعة' : 'تسجيل حفظ جديد';
+        $notifBody  = $isRevision
+            ? 'سجّل المحفّظ مراجعة لابنك «' . $student->name . '»: سورة ' . $request->surah_name
+                . ' (التقييم: ' . ($qualityLabels[$request->quality] ?? $request->quality) . ').'
+            : 'سجّل المحفّظ حفظاً جديداً لابنك «' . $student->name . '»: سورة ' . $request->surah_name
+                . ' (التقييم: ' . ($qualityLabels[$request->quality] ?? $request->quality) . ').';
+
         InAppNotification::sendSafe(
             $student->parent,
             'memorization_added',
-            'تسجيل حفظ جديد',
-            'سجّل المحفّظ حفظاً جديداً لابنك «' . $student->name . '»: سورة ' . $request->surah_name
-                . ' (التقييم: ' . ($qualityLabels[$request->quality] ?? $request->quality) . ').',
+            $notifTitle,
+            $notifBody,
             $student->id,
             'parent/child.html?id=' . $student->id
         );

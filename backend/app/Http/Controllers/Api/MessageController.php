@@ -191,7 +191,14 @@ class MessageController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'أُرسلت الرسالة',
-            'data'    => $message,
+            'data'    => [
+                'id'          => $message->id,
+                'sender_role' => $message->sender_role,
+                'mine'        => true,  // المرسِل دائماً "يملك" الرسالة التي أرسلها للتو
+                'body'        => $message->body,
+                'read_at'     => $message->read_at,
+                'created_at'  => $message->created_at,
+            ],
         ], 201);
     }
 }
