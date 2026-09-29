@@ -1,0 +1,69 @@
+@startuml MUTQEN_Seq_Login_And_Protected_Request
+autonumber
+title Login (dual role + token ability) followed by a protected request - AS-IS
+
+actor "Browser\n(js/auth.js + js/api.js)" as B
+participant "throttle\n10/min/IP" as T
+participant "AuthController::login" as A
+database "users + centers" as U
+database "personal_access_tokens\n(Sanctum)" as P
+participant "auth:sanctum guard" as S
+participant "Role gate middleware\n(admin | teacher | parent | manager)" as G
+participant "Controller" as C
+
+B -> T : POST /api/auth/login {email|display_code, password}
+alt more than 10 attempts / minute
+    T --> B : 429 Too Many Requests
+else
+    T -> A : forward
+    A -> A : validate (email required, password min 6) - 422 Arabic errors
+    A -> U : WHERE UPPER(display_code)=UPPER(login) ?? WHERE email=login
+    U --> A : user | null
+    alt no user OR Hash::check fails
+        A --> B : 422 {success:false, errors.email:[uniform message]}
+    else user.is_active = false
+        A --> B : 403 account inactive (after password check - no state leak)
+    else user.center_id set AND center.is_active = false
+        A --> B : 403 center inactive (teacher / center_manager only)
+    else ok
+        note over A
+          abilities = parent -> ['parent']
+                      center_manager -> ['manager']
+                      admin, teacher -> ['*']
+        end note
+        A -> P : createToken('auth_token', abilities)\nexpires_at = now + 10080 min (7 days)
+        P --> A : plainTextToken "id|secret"
+        A --> B : 200 {token, user{id,name,email,phone,role,center_id,center_name,type}}
+        B -> B : localStorage mutqin_token / mutqin_user\nredirect Auth.dashboardFor(role)
+    end
+end
+
+== Protected request, e.g. GET /api/manager/students ==
+B -> S : GET /api/manager/students\nAuthorization: Bearer <token>
+S -> P : find by id, compare sha256, check expires_at
+alt no header / unknown / expired (7d) / revoked
+    S --> B : 401 {"message":"Unauthenticated."} (framework JSON, not the envelope)
+    B -> B : api.js clears localStorage, redirects to login.html
+else valid
+    S -> G : request.user() = owner, tokenCan() from abilities
+    note over G
+      admin   : isAdmin() AND tokenCan('*')
+      teacher : role in [teacher, admin] AND tokenCan('*')
+      parent  : isParent() AND tokenCan('parent')
+      manager : isCenterManager() AND tokenCan('manager') AND center_id
+    end note
+    alt role or ability mismatch\n(parent token -> /teachers, teacher token -> /admin/*, manager token -> /students, admin token -> /manager/*)
+        G --> B : 403 {success:false, message: Arabic}
+    else pass
+        G -> C : handle
+        C -> C : scope from account only (manager center_id, teacher teacher_id, parent parent_id)
+        alt ownership fails inside controller
+            C --> B : 403 envelope
+        else validation fails
+            C --> B : 422 envelope, errors by field
+        else ok
+            C --> B : 200 {success:true, message, data}
+        end
+    end
+end
+@enduml

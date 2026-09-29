@@ -1,0 +1,51 @@
+@startuml MUTQEN_State_Lifecycles
+title Lifecycles - StudentRequest, Student, User, Center, Sanctum token - AS-IS
+
+state "StudentRequest.status\n(student_requests)" as SR {
+  [*] --> pending : managerStore (type=transfer)\nor legacy add row
+  pending --> approved : approve by manager with\ncenter_id == target_center_id\n(transaction: move student, set target_teacher_id)
+  pending --> rejected : reject by same manager\n(admin_note optional)
+  pending --> pending : target manager deactivated\nstays pending; admin gets\nmanager_deactivated (info only)
+  approved --> [*]
+  rejected --> [*]
+  note right of approved : terminal - re-approve/reject => 422
+}
+
+state "Student (students.is_active)\nno hard delete" as ST {
+  state "active" as st_active
+  state "inactive\n(out of attendance, xlsx import,\nreports, default lists; history kept)" as st_inactive
+  [*] --> st_active : POST /students (admin) or\nPOST /manager/students (manager)\nS{n} reserved atomically
+  st_active --> st_inactive : PUT .../students/{id}/status false\n(status_changed_by/at)
+  st_inactive --> st_active : PUT .../students/{id}/status true
+  st_active --> st_active : transfer approved (center_id, teacher_id)\nor changeTeacher (teacher_id may be NULL,\nformer_teacher_name kept)
+}
+
+state "User account (users.is_active)\nteacher | center_manager | parent" as US {
+  state "active" as u_active
+  state "inactive" as u_inactive
+  [*] --> u_active : created by admin/manager\nT{n}/CA{n}/P{n}, generated e-mail
+  u_active --> u_inactive : toggleStatus false\n(admin: teacher/manager; manager: own-center teacher,\nthe only primary teacher cannot be stopped)\n=> tokens()->delete()
+  u_inactive --> u_active : toggleStatus true\n(user logs in again)
+  u_active --> u_active : password changed (otp/self/admin)\nrecordPasswordChange => tokens()->delete()
+  u_inactive --> u_inactive : login => 403 account inactive
+}
+
+state "Center (centers.is_active)" as CE {
+  state "active" as c_active
+  state "inactive" as c_inactive
+  [*] --> c_active : POST /centers (admin), C{n}
+  c_active --> c_inactive : PUT /centers/{id}/status false\n=> tokens of ALL users with center_id deleted\n(teachers + manager); their login => 403
+  c_inactive --> c_active : PUT /centers/{id}/status true
+}
+
+state "Sanctum token\n(personal_access_tokens)" as TK {
+  state "issued" as tk_issued
+  state "revoked (row deleted)" as tk_revoked
+  state "expired" as tk_expired
+  [*] --> tk_issued : login OK, abilities by role,\nexpires_at = now + 7d
+  tk_issued --> tk_revoked : logout (this token) |\nuser deactivated | center deactivated |\npassword changed (all tokens)
+  tk_issued --> tk_expired : expires_at reached (10080 min)
+  tk_revoked --> [*] : next request 401\nclient clears localStorage
+  tk_expired --> [*] : next request 401
+}
+@enduml

@@ -1,0 +1,40 @@
+@startuml MUTQEN_C4_L1_Context
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+LAYOUT_TOP_DOWN()
+title MUTQEN (Mutqin) - C4 Level 1 - System Context - AS-IS (2026-09-14)
+
+AddElementTag("future", $bgColor="#F4F4F4", $fontColor="#616161", $borderColor="#9E9E9E", $borderStyle=DashedLine(), $legendText="future / not in repository")
+AddRelTag("future", $lineStyle=DashedLine(), $lineColor="#9E9E9E", $textColor="#9E9E9E", $legendText="future relation")
+
+Person(admin, "System Admin", "role=admin. Creates centers, center managers, teachers, students; sees all users; admin PDF reports. Not a party to transfer requests.")
+Person(manager, "Center Manager", "role=center_manager (max one per center). Own-center teachers/students, fingerprint review, transfer requests, center reports.")
+Person(teacher, "Teacher (muhaffiz)", "role=teacher. Attendance, memorization, weekly thumn tests, xlsx import, parent messaging, own reports/profile.")
+Person(parent, "Parent (guardian)", "role=parent. Read-only children view, in-app notifications, messaging with the child teacher.")
+
+Enterprise_Boundary(mutqen, "MUTQEN platform - mutqin.ly") {
+    System(web, "MUTQEN Web Client", "Static HTML + Bootstrap 5 RTL + vanilla JS (no build step), PWA manifest. Pages per role: admin/ manager/ teacher/ parent/. Token in localStorage (mutqin_token).")
+    System(api, "MUTQEN REST API", "Laravel 11 + Sanctum 4, PHP 8.2. Envelope {success,message,data,errors}, Arabic validation messages. mPDF + PhpSpreadsheet embedded.")
+    SystemDb(db, "MySQL mutqin_db", "MySQL/MariaDB. Domain tables, notifications (database channel), personal_access_tokens, code_sequences, athman reference.")
+}
+
+System_Ext(fpdev, "Fingerprint attendance device", "Off-line device. Its .xlsx export is uploaded manually by a teacher or a center manager. No direct integration.")
+System_Ext(n8n, "n8n automation", "External workflow engine. Daily 20:00 Africa/Tripoli: login as admin/teacher, GET /api/attendance, Arabic digest.")
+System_Ext(smtp, "SMTP e-mail", "Channel of the n8n digest (emailSend node), only when absence or unrecorded students exist.")
+System_Ext(flutter, "Flutter mobile app", "Not in repository. Would consume the same REST API and Sanctum tokens.", $tags="future")
+System_Ext(sms, "SMS gateway", "AuthController::sendOtp() is a logging stub - the OTP never leaves the server today.", $tags="future")
+
+Rel(admin, web, "Uses", "HTTPS")
+Rel(manager, web, "Uses", "HTTPS")
+Rel(teacher, web, "Uses", "HTTPS")
+Rel(parent, web, "Uses", "HTTPS")
+Rel(web, api, "fetch /api/* with Authorization: Bearer", "JSON/HTTPS, same origin /backend/public/api in prod, localhost:9090 in dev")
+Rel(api, db, "Eloquent / PDO", "MySQL")
+Rel(fpdev, web, "xlsx export uploaded by user", "POST /attendance/import, /manager/attendance/import")
+Rel(n8n, api, "POST /api/auth/login, GET /api/attendance?date=", "HTTPS")
+Rel(n8n, smtp, "daily attendance digest", "SMTP")
+Rel(flutter, api, "same endpoints", "HTTPS", $tags="future")
+Rel(api, sms, "OTP delivery (TODO)", "SMS", $tags="future")
+
+SHOW_LEGEND()
+@enduml

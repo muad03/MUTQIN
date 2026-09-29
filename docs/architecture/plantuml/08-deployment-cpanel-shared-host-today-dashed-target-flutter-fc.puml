@@ -1,0 +1,73 @@
+@startuml MUTQEN_Deployment
+title MUTQEN deployment - AS-IS cPanel shared host (solid) and TARGET additions (dashed)
+skinparam componentStyle rectangle
+skinparam linetype ortho
+
+node "Developer workstation\nWindows 11 + XAMPP" as dev {
+  artifact "Unified git repo\nbackend/ frontend-html/ n8n/ .cpanel.yml" as git
+  component "php artisan serve :9090\n(PHP_CLI_SERVER_WORKERS=4)" as art
+  component "php -S localhost:8080\n(frontend-html)" as phps
+  database "XAMPP MySQL\nmutqin_db, mutqin_test" as xdb
+}
+
+node "cPanel shared host - mutqin.ly\nApache 2.4, PHP 8.2 (gd, zip)" as cp {
+  component "cPanel Git Version Control\n.cpanel.yml tasks" as cpgit
+  folder "/home/[redacted-cpanel-user]/public_html" as ph {
+    artifact "Static web client\nindex/login/forgot-password.html\nadmin/ manager/ teacher/ parent/ js/ css/\nmanifest.webmanifest (PWA, no SW)" as static
+    folder "backend/ (rsync, excl. vendor .env storage bootstrap/cache)" as be {
+      artifact ".htaccess\nRequire all denied" as ht1
+      artifact "public/.htaccess\nRequire all granted + rewrite index.php\npasses Authorization header" as pub
+      component "Laravel 11 app\nroutes/api.php" as lar
+      artifact "vendor/\ncomposer install on host" as ven
+      artifact ".env + storage/\ncreated on host" as env
+    }
+  }
+  database "cPanel MySQL/MariaDB\nmutqin_db" as mysql
+  component "cron: none\n(no scheduler, no queue worker)" as cron
+}
+
+actor "Browser / installed PWA\ndesktop, Android, iOS\nlocalStorage token" as browser
+node "n8n (external host / Docker)\ndaily 20:00 Africa/Tripoli" as n8n
+node "SMTP server" as smtp
+artifact "Fingerprint device xlsx\n(carried by a person)" as usb
+
+git --> cpgit : git push
+cpgit --> static : rsync -a --delete frontend-html/ -> public_html/
+cpgit --> be : rsync -a --delete backend/ -> public_html/backend/\nrm bootstrap/cache/*.php
+browser --> static : https://mutqin.ly/*.html
+browser --> pub : https://mutqin.ly/backend/public/api/*\n(same origin, Bearer)
+pub --> lar
+lar --> mysql : PDO
+usb --> browser : upload
+n8n --> pub : POST /api/auth/login\nGET /api/attendance
+n8n --> smtp : digest e-mail
+phps --> art : http://localhost:9090/api
+art --> xdb
+
+' ---------- TARGET (proposed) ----------
+node "Flutter apps\nAndroid / iOS\nsame REST API" as fl #line.dashed;line:888888;text:888888
+cloud "Firebase Cloud Messaging\npush for request_*, memorization_added,\ntest_added, message_received" as fcm #line.dashed;line:888888;text:888888
+node "Queue worker\nphp artisan queue:work\n+ scheduler cron" as qw #line.dashed;line:888888;text:888888
+database "Redis\ncache, queue, rate limiter" as redis #line.dashed;line:888888;text:888888
+cloud "Object storage (S3-compatible)\nxlsx uploads, PDF archive,\nnightly mysqldump" as obj #line.dashed;line:888888;text:888888
+node "Monitoring\nuptime on /up, error tracking,\nlog shipping" as mon #line.dashed;line:888888;text:888888
+cloud "SMS gateway\nLibyana / Madar (OTP)" as sms #line.dashed;line:888888;text:888888
+node "Optional VPS / container host\nnginx + php-fpm, TLS, WAF" as vps #line.dashed;line:888888;text:888888
+
+fl ..> pub : HTTPS JSON
+lar ..> qw : queued notification jobs
+qw ..> fcm : push
+fcm ..> fl : device tokens
+qw ..> sms : OTP
+lar ..> obj : files
+qw ..> obj : backups
+lar ..> mon : errors, metrics
+qw ..> redis
+lar ..> redis : cache
+cp ..> vps : migrate
+
+legend right
+  solid = AS-IS (code + .cpanel.yml + DEPLOYMENT.md)
+  dashed grey = TARGET, not in repository
+endlegend
+@enduml

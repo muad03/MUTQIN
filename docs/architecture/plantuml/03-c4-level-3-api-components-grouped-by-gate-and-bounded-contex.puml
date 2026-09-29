@@ -1,0 +1,140 @@
+@startuml MUTQEN_C4_L3_API_Components
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+LAYOUT_TOP_DOWN()
+title MUTQEN REST API - C4 Level 3 - Components by gate and bounded context - AS-IS
+
+Container(web, "Web Client / n8n", "HTTPS JSON", "Authorization: Bearer token")
+ContainerDb(db, "mutqin_db", "MySQL", "")
+
+Container_Boundary(api, "REST API - Laravel 11 (backend/app)") {
+
+    Boundary(mw, "Middleware chain (bootstrap/app.php aliases)") {
+        Component(thr, "throttle", "Laravel", "login 10/min, otp request 5/min, otp verify 10/min (per IP)")
+        Component(sanc, "auth:sanctum", "Sanctum guard", "token hash lookup, expires_at (7d). Fail -> 401 Unauthenticated (framework JSON)")
+        Component(gadm, "admin gate", "AdminMiddleware", "isAdmin() AND tokenCan('*') else 403")
+        Component(gtea, "teacher gate", "TeacherMiddleware", "role in [teacher, admin] AND tokenCan('*') else 403")
+        Component(gpar, "parent gate", "ParentMiddleware", "isParent() AND tokenCan('parent') else 403")
+        Component(gmgr, "manager gate", "CenterManagerMiddleware", "isCenterManager() AND tokenCan('manager') AND center_id else 403")
+    }
+
+    Boundary(iam, "Identity & Access") {
+        Component(authc, "AuthController", "public + auth", "login (email or display_code), forgotPasswordRequest/Verify (parent, teacher only), logout, user")
+        Component(profc, "TeacherProfileController", "teacher gate", "show, updatePhone, changePassword (token owner only)")
+        Component(admuc, "AdminUserController", "admin gate", "index - read-only user directory")
+        Component(mgmtc, "ManagerManagementController", "admin gate", "index, store, update, toggleStatus - one manager per center, {latin}.centeradmin@mutqin.ly")
+    }
+
+    Boundary(cst, "Centers & Staff") {
+        Component(cenc, "CenterController", "admin gate", "index, store, show, update, toggleStatus (revokes members tokens), stats, teachers, students")
+        Component(teac, "TeacherController", "admin gate", "index, store, show, update, toggleStatus, hasPrimary")
+        Component(cmgc, "CenterManagerController", "manager gate", "dashboard, myCenter, otherCenters, teachers/showTeacher/storeTeacher/updateTeacher/toggleTeacherStatus/teacherNextCode/teacherPerformance, parents, attendanceIndex, correctAttendance, reportsSystem/Management, reportCenter/Teacher/Student")
+    }
+
+    Boundary(stu, "Students & Guardians") {
+        Component(stuc, "StudentController", "admin / manager / teacher / parent gates", "store, index, show, update, toggleStatus, changeTeacher, nextCode, searchParents, managerSearchParents, teacherDetails, teacherDay, parentChildren, parentStudentDetails")
+    }
+
+    Boundary(att, "Attendance") {
+        Component(attc, "AttendanceController", "teacher gate", "index, store, report (active students only)")
+        Component(impc, "AttendanceImportController", "teacher + manager gates", "import xlsx - center-scoped; teacher: only own students, others silently ignored")
+    }
+
+    Boundary(mem, "Memorization & Assessment") {
+        Component(memc, "MemorizationController", "teacher gate", "index (?juz via SurahReference), store, destroy, surahs, studentsProgress")
+        Component(wtc, "WeeklyTestController", "teacher gate", "index, store, show, update - no destroy")
+        Component(athc, "AthmanController", "auth", "search, hizb, show (read-only thumn index)")
+    }
+
+    Boundary(req, "Requests & Workflow") {
+        Component(srqc, "StudentRequestController", "manager gate", "managerIndex, managerStore (transfer only), approve, reject; assertManagerScope = target-center manager only")
+    }
+
+    Boundary(msg, "Messaging & Notifications") {
+        Component(msgc, "MessageController", "parent + teacher gates", "threads, thread, send - parent of student / actual teacher only; admin -> 403")
+        Component(notc, "NotificationController", "auth", "index, markRead, markAllRead")
+        Component(inapp, "InAppNotification", "Notification, database channel", "sendSafe(); types: request_created/approved/rejected, manager_deactivated, memorization_added, test_added, message_received")
+    }
+
+    Boundary(rep, "Reporting") {
+        Component(dashc, "DashboardController", "public + auth", "publicStats, demoAccounts (local/debug only), index role-aware")
+        Component(repc, "ReportController", "teacher + admin gates", "weekly, student, missingNationalId")
+        Component(pdfc, "ReportPdfController", "teacher/admin/manager gates, mPDF", "student, teacherGroup, center, teachers, atRisk, overview, managerCenter, managerAtRisk, managerTeachers")
+        Component(reps, "ReportService", "app/Services", "studentData, teacherGroupData, centerData, allCentersData, teachersPerformance, atRiskStudents, progressSummary, centerManagement, overview, *AllTime")
+    }
+
+    Boundary(sup, "app/Support - shared kernel") {
+        Component(arab, "ArabicText", "static", "stripTashkeel, normalize, normalizeQuery, sqlNormalize")
+        Component(dcode, "DisplayCode", "static", "preview/next - code_sequences S/T/CA/P/C, atomic LAST_INSERT_ID")
+        Component(lemail, "LoginEmail", "static", "temporary(), build(latin, code)@mutqin.ly, assign()")
+        Component(pres, "ParentResolver", "static", "id_number -> phone -> email -> create parent (random/required password)")
+        Component(phn, "PhoneNumber", "static", "normalize +218/00218/Arabic digits -> 09xxxxxxxx")
+        Component(ptr, "PrimaryTeacherRule", "static", "assert one primary teacher per center")
+        Component(sur, "SurahReference", "static", "114 surahs -> juz; progress(), namesOfJuz(), juzRangeOf()")
+        Component(pct, "Percentage", "static", "of(part,total)")
+    }
+
+    Component(models, "Eloquent models", "app/Models (14)", "User, Center, Student, StudentRequest, Message, Attendance, Memorization, Revision, TajweedEvaluation, WeeklyTest, WeeklyTestQuestion, OtpReset, PasswordChangeLog, Athman. creating hooks reserve display codes.")
+}
+
+Rel(web, thr, "POST /auth/login, /auth/forgot-password/*")
+Rel(web, sanc, "all other /api/* with Bearer")
+Rel(thr, authc, "")
+Rel(sanc, gadm, "")
+Rel(sanc, gtea, "")
+Rel(sanc, gpar, "")
+Rel(sanc, gmgr, "")
+Rel(sanc, notc, "auth only")
+Rel(sanc, athc, "auth only")
+Rel(sanc, dashc, "auth only")
+Rel(gadm, teac, "")
+Rel(gadm, cenc, "")
+Rel(gadm, stuc, "")
+Rel(gadm, admuc, "")
+Rel(gadm, mgmtc, "")
+Rel(gadm, repc, "")
+Rel(gadm, pdfc, "")
+Rel(gtea, profc, "")
+Rel(gtea, stuc, "")
+Rel(gtea, msgc, "")
+Rel(gtea, attc, "")
+Rel(gtea, impc, "")
+Rel(gtea, memc, "")
+Rel(gtea, wtc, "")
+Rel(gtea, repc, "")
+Rel(gtea, pdfc, "")
+Rel(gpar, stuc, "")
+Rel(gpar, msgc, "")
+Rel(gmgr, cmgc, "")
+Rel(gmgr, stuc, "")
+Rel(gmgr, impc, "")
+Rel(gmgr, pdfc, "")
+Rel(gmgr, srqc, "")
+
+Rel(authc, phn, "")
+Rel(stuc, pres, "")
+Rel(stuc, arab, "")
+Rel(srqc, pres, "legacy add approval")
+Rel(pres, phn, "")
+Rel(pres, lemail, "")
+Rel(mgmtc, lemail, "")
+Rel(teac, ptr, "")
+Rel(cmgc, ptr, "lockForUpdate")
+Rel(memc, sur, "")
+Rel(reps, sur, "")
+Rel(reps, pct, "")
+Rel(repc, reps, "")
+Rel(pdfc, reps, "")
+Rel(cmgc, reps, "")
+Rel(dashc, reps, "")
+Rel(srqc, inapp, "")
+Rel(mgmtc, inapp, "")
+Rel(memc, inapp, "")
+Rel(wtc, inapp, "")
+Rel(msgc, inapp, "")
+Rel(models, db, "Eloquent")
+Rel(dcode, db, "code_sequences")
+Rel(inapp, db, "notifications")
+
+SHOW_LEGEND()
+@enduml
